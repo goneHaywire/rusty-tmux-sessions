@@ -1,13 +1,22 @@
-pub mod actions;
-pub mod cli;
-pub mod session;
-pub mod window;
+mod tmux;
+mod tui;
 
-use anyhow::Result;
+use std::{
+    io,
+    process::{exit, Command},
+};
 
-fn main() -> Result<()> {
-    let seshs = cli::list_sessions()?;
+use tui::models::App;
 
-    println!("{:#?}", seshs);
-    Ok(())
+fn main() -> io::Result<()> {
+    if Command::new("tmux").arg("-V").status().is_err() {
+        eprintln!("Couldn't run tmux");
+        exit(1);
+    }
+
+    let mut terminal = tui::main::init()?;
+    let app_result = App::default().run(&mut terminal);
+    tui::main::restore()?;
+
+    app_result
 }

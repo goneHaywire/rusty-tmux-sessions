@@ -1,21 +1,24 @@
-use std::str::FromStr;
+use std::{
+    process::Command,
+    str::{self, FromStr},
+};
 
 use anyhow::{Context, Error, Result};
 
-use crate::{cli, window};
+use crate::tmux::windows::{self};
 
 pub const SESSION_FORMAT: &str =
     "#{#S,#{?session_attached,1,},#{session_last_attached},#{session_windows},#{session_created}}";
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Session {
-    name: String,
-    is_attached: bool,
-    last_attached: u64,
-    created_at: u64,
-    windows_count: usize,
-    windows: Vec<window::Window>,
-    is_hidden: bool,
+    pub name: String,
+    pub is_attached: bool,
+    pub last_attached: u64,
+    pub created_at: u64,
+    pub windows_count: usize,
+    pub windows: Vec<windows::Window>,
+    pub is_hidden: bool,
 }
 
 impl FromStr for Session {
@@ -27,7 +30,7 @@ impl FromStr for Session {
         assert_eq!(
             parts.len(),
             5,
-            "there are 5 parts in list-sessions format str"
+            "should be 5 parts in list-sessions format str"
         );
 
         Ok(Session {
@@ -36,7 +39,7 @@ impl FromStr for Session {
             last_attached: parts[2]
                 .parse()
                 .context("error parsing session last_attached")?,
-            windows: cli::list_windows(parts[0])?,
+            windows: windows::get_windows(parts[0])?,
             windows_count: parts[3]
                 .parse()
                 .context("error parsing session windows_count")?,
@@ -46,4 +49,22 @@ impl FromStr for Session {
             is_hidden: false,
         })
     }
+}
+
+fn list_sessions() -> Result<Vec<u8>> {
+    Ok(Command::new("tmux")
+        .args(["list-sessions", "-F", SESSION_FORMAT])
+        .output()
+        .context("list-sessions command failed")?
+        .stdout)
+}
+pub fn get_sessions() -> Result<Vec<Session>> {
+    let sessions = list_sessions()?;
+
+    str::from_utf8(&sessions)
+        .context("error parsing list-sessions output")?
+        .lines()
+        .map(|s| s.trim())
+        .map(Session::from_str)
+        .collect()
 }
