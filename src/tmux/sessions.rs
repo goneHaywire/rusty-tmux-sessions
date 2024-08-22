@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{Context, Error, Result};
 
-use crate::tmux::windows::{self};
+use super::windows;
 
 pub const SESSION_FORMAT: &str =
     "#{#S,#{?session_attached,1,},#{session_last_attached},#{session_windows},#{session_created}}";

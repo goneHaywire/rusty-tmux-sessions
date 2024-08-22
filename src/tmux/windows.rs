@@ -7,9 +7,17 @@ use anyhow::{Context, Error, Result};
 
 pub const WINDOW_FORMAT: &str = "#{#W,#{?window_active,1,},#{window_activity},#{window_panes}}";
 
+enum Actions {
+    List,
+    Select,
+    Create,
+    Kill,
+    Rename,
+}
+
 #[derive(Debug, Clone)]
 pub struct Window {
-    name: String,
+    pub name: String,
     is_active: bool,
     last_active: u64,
     //panes: Vec<String>, TBD
