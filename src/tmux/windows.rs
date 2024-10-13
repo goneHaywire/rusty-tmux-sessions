@@ -1,28 +1,18 @@
-use std::{
-    process::Command,
-    str::{self, FromStr},
-};
+use std::str::{self, FromStr};
 
 use anyhow::{Context, Error, Result};
 
-pub const WINDOW_FORMAT: &str = "#{#W,#{?window_active,1,},#{window_activity},#{window_panes}}";
-
-enum Actions {
-    List,
-    Select,
-    Create,
-    Kill,
-    Rename,
-}
+use super::{tmux::TmuxEntity, tmux_command::TmuxCommand};
 
 #[derive(Debug, Clone)]
 pub struct Window {
     pub name: String,
     is_active: bool,
     last_active: u64,
-    //panes: Vec<String>, TBD
     panes_count: usize,
 }
+
+impl TmuxEntity for Window {}
 
 impl FromStr for Window {
     type Err = Error;
@@ -42,7 +32,6 @@ impl FromStr for Window {
             last_active: parts[2]
                 .parse()
                 .context("error parsing window last_active")?,
-            //panes:
             panes_count: parts[3]
                 .parse()
                 .context("error parsing window panes_count")?,
@@ -50,23 +39,45 @@ impl FromStr for Window {
     }
 }
 
-fn list_windows(session_name: &str) -> Result<Vec<u8>> {
-    Ok(Command::new("tmux")
-        .args(["list-windows", "-t", session_name, "-F", WINDOW_FORMAT])
-        .output()
-        .with_context(|| format!("list-windows failed for session {session_name}"))?
-        .stdout)
-}
+pub struct WindowService;
 
-pub fn get_windows(session_name: &str) -> Result<Vec<Window>> {
-    let windows = list_windows(session_name)?;
+impl WindowService {
+    pub fn get_all(session_name: &str) -> Result<Vec<Window>> {
+        //let windows = WindowService::list(Some(session_name))?;
+        //let session = session.expect("no session passed to WindowService::get_all");
+        let windows = TmuxCommand::list_windows(session_name)?;
 
-    str::from_utf8(&windows)
-        .context("error parsing list-windows output")?
-        .lines()
-        .map(|s| s.trim())
-        .map(Window::from_str)
-        .collect()
+        str::from_utf8(&windows)
+            .context("error parsing list-windows output")?
+            .lines()
+            .map(|s| s.trim())
+            .map(Window::from_str)
+            .collect()
+    }
+
+    fn create(current_window_name: &str, name: &str) -> Result<()> {
+        TmuxCommand::create_window(current_window_name, name)
+    }
+
+    fn kill(name: &str) -> Result<()> {
+        TmuxCommand::kill_window(name)
+    }
+
+    fn rename(old_name: &str, new_name: &str) -> Result<()> {
+        TmuxCommand::rename_window(old_name, new_name)
+    }
+
+    fn attach(name: &str) -> Result<()> {
+        TmuxCommand::attach_window(name)
+    }
+
+    fn show(name: &str) -> Result<()> {
+        todo!();
+    }
+
+    fn hide(name: &str) -> Result<()> {
+        todo!();
+    }
 }
 
 #[test]
