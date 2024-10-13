@@ -4,7 +4,7 @@ use anyhow::{Context, Error, Result};
 
 use super::{tmux::TmuxEntity, tmux_command::TmuxCommand};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Window {
     pub name: String,
     is_active: bool,

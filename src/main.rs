@@ -15,8 +15,8 @@ fn main() -> io::Result<()> {
     }
 
     let mut terminal = tui::main::init()?;
-    let app_result = App::default().run(&mut terminal);
+    App::default().run(&mut terminal)?;
     tui::main::restore()?;
 
-    app_result
+    Ok(())
 }

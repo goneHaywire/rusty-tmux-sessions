@@ -6,22 +6,15 @@ use std::{
 
 use anyhow::{Context, Error, Result};
 
-use crate::tmux::windows::WindowService;
-
-use super::{
-    tmux::TmuxEntity,
-    tmux_command::TmuxCommand,
-    windows::{self, Window},
-};
+use super::{tmux::TmuxEntity, tmux_command::TmuxCommand};
 
 #[derive(Debug, Clone)]
 pub struct Session {
     pub name: String,
     pub is_attached: bool,
-    pub last_attached: u64,
+    pub last_attached: Option<u64>,
     pub created_at: u64,
     pub windows_count: usize,
-    pub windows: Vec<windows::Window>,
     pub is_hidden: bool,
 }
 
@@ -33,7 +26,6 @@ impl Default for Session {
             last_attached: Default::default(),
             created_at: Default::default(),
             windows_count: 0,
-            windows: Vec::default(),
             is_hidden: false,
         }
     }
@@ -42,12 +34,6 @@ impl Default for Session {
 impl Session {
     fn with_name(mut self, name: &str) -> Self {
         self.name = name.into();
-        self
-    }
-
-    fn with_windows(mut self, windows: Vec<Window>) -> Self {
-        self.windows = windows;
-        self.windows_count = self.windows.iter().count();
         self
     }
 }
@@ -69,21 +55,15 @@ impl FromStr for Session {
         let session = Session {
             name: parts[0].into(),
             is_attached: parts[1] == "1",
-            last_attached: parts[2]
+            last_attached: parts[2].parse::<u64>().ok(),
+            windows_count: parts[3]
                 .parse()
-                .context("error parsing session last_attached")?,
-            windows: Vec::default(),
-            windows_count: usize::default(),
+                .context("error parsing session windows_count")?,
             created_at: parts[4]
                 .parse()
                 .context("error parsing session created_at")?,
             is_hidden: false,
         };
-        let name = session.name.clone();
-        let session = session.with_windows(WindowService::get_all(&name)?);
-        //windows_count: parts[3]
-        //    .parse()
-        //    .context("error parsing session windows_count")?,
         Ok(session)
     }
 }
@@ -91,7 +71,7 @@ impl FromStr for Session {
 pub struct SessionService;
 
 impl SessionService {
-    fn get_all(_: &str) -> Result<Vec<Session>> {
+    pub fn get_all() -> Result<Vec<Session>> {
         let sessions = TmuxCommand::list_sessions()?;
 
         str::from_utf8(&sessions)
@@ -102,7 +82,7 @@ impl SessionService {
             .collect()
     }
 
-    fn create(name: &str) -> Result<()> {
+    pub fn create(name: &str) -> Result<()> {
         TmuxCommand::create_session(name)
         //let sessions = Self::get_all("")?
         //    .iter()
@@ -111,23 +91,23 @@ impl SessionService {
         //let session = Session::default().with_name(name);
     }
 
-    fn kill(name: &str) -> Result<()> {
+    pub fn kill(name: &str) -> Result<()> {
         TmuxCommand::kill_session(name)
     }
 
-    fn rename(old_name: &str, new_name: &str) -> Result<()> {
+    pub fn rename(old_name: &str, new_name: &str) -> Result<()> {
         TmuxCommand::rename_session(old_name, new_name)
     }
 
-    fn attach(name: &str) -> Result<()> {
+    pub fn attach(name: &str) -> Result<()> {
         TmuxCommand::attach_session(name)
     }
 
-    fn hide(name: &str) -> Result<()> {
+    pub fn hide(name: &str) -> Result<()> {
         todo!();
     }
 
-    fn show(name: &str) -> Result<()> {
+    pub fn show(name: &str) -> Result<()> {
         todo!();
     }
 }

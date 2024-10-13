@@ -1,44 +1,35 @@
-use std::io;
-
 use ratatui::{
     buffer::Buffer,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
+    layout::Rect,
     style::Stylize,
-    widgets::{Block, Widget},
+    widgets::{Block, List, StatefulWidget, Widget},
     Frame,
 };
 use ratatui_macros::horizontal;
+use std::io;
 
 use crate::tmux::{
-    sessions::{self, Session},
-    windows::Window,
+    sessions::{Session, SessionService},
+    windows::{Window, WindowService},
 };
 
-enum ScrollDirection {
-    Up,
-    Down,
-    Top,
-    Bottom,
-}
+use super::{
+    main::Tui,
+    tmux_list::{ScrollDirection, StatefulList},
+};
 
-enum SectionDirection {
-    Left,
-    Right,
-}
-
-use super::main::Tui;
-
-#[derive(PartialEq)]
+#[derive(PartialEq, Default)]
 enum Section {
+    #[default]
     Sessions,
     Windows,
 }
 
+#[derive(Default)]
 pub struct App {
-    selected_session_index: usize,
-    selected_window_index: usize,
-    show_hidden: bool,
-    sessions: Vec<Session>,
+    session_list: StatefulList<Session>,
+    window_list: StatefulList<Window>,
     section: Section,
     is_renaming: bool,
     is_killing: bool,
@@ -46,40 +37,20 @@ pub struct App {
     exit: bool,
 }
 
-impl Default for App {
-    fn default() -> Self {
-        App {
-            selected_session_index: 0,
-            selected_window_index: 0,
-            show_hidden: true,
-            sessions: vec![],
-            section: Section::Sessions,
-            is_renaming: false,
-            is_killing: false,
-            is_adding: false,
-            exit: false,
-        }
-    }
-}
-
-impl Widget for &App {
+impl Widget for &mut App {
     fn render(self, area: ratatui::prelude::Rect, buf: &mut Buffer) {
         let [session_area, window_area] = horizontal![==50%, ==50%].areas(area);
 
-        Block::bordered()
-            //.title(" Sessions ".bold())
-            .title(format!("{}", self.selected_session_index).bold())
-            .render(session_area, buf);
-        Block::bordered()
-            //.title(" Windows ".bold())
-            .title(format!("{}", self.selected_window_index).bold())
-            .render(window_area, buf);
+        self.render_session_list(session_area, buf);
+        self.render_window_list(window_area, buf);
     }
 }
 
 impl App {
     pub fn run(&mut self, terminal: &mut Tui) -> io::Result<()> {
-        self.sessions = sessions::get_sessions().unwrap();
+        self.load_sessions_list();
+        self.load_window_list();
+
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events()?;
@@ -88,43 +59,56 @@ impl App {
     }
 
     pub fn handle_events(&mut self) -> io::Result<()> {
+        use KeyCode::Char;
+        use ScrollDirection::*;
+        use Section::*;
+
         match event::read()? {
             Event::Key(key_press) if key_press.kind == KeyEventKind::Press => {
                 let keycode = key_press.code;
 
-                match keycode {
-                    KeyCode::Char('q') => self.exit(),
-                    KeyCode::Char('j') if self.section == Section::Sessions => {
-                        self.session_scroll(ScrollDirection::Down)
+                match (keycode, &self.section) {
+                    (Char('q'), _) => self.exit(),
+                    (Char('d'), _) => self.toggle_is_killing(),
+                    (Char('y'), _) if self.is_killing => {
+                        let curr_sesh = self.session_list.get_active_item();
+                        let _ = SessionService::kill(&curr_sesh.name);
+                        self.load_sessions_list();
+                        self.load_window_list();
+                        self.toggle_is_killing()
                     }
-                    KeyCode::Char('k') if self.section == Section::Sessions => {
-                        self.session_scroll(ScrollDirection::Up)
+                    _ if self.is_killing => self.toggle_is_killing(),
+
+                    (Char('j'), Sessions) => {
+                        self.session_list.scroll(Next);
+                        self.load_window_list();
                     }
-                    KeyCode::Char('j') if self.section == Section::Windows => {
-                        self.window_scroll(ScrollDirection::Down)
+                    (Char('k'), Sessions) => {
+                        self.session_list.scroll(Prev);
+                        self.load_window_list();
                     }
-                    KeyCode::Char('k') if self.section == Section::Windows => {
-                        self.window_scroll(ScrollDirection::Up)
+                    (Char('g'), Sessions) => {
+                        self.session_list.scroll(First);
+                        self.load_window_list();
                     }
-                    KeyCode::Char('g') if self.section == Section::Sessions => {
-                        self.session_scroll(ScrollDirection::Top)
+                    (Char('G'), Sessions) => {
+                        self.session_list.scroll(Last);
+                        self.load_window_list();
                     }
-                    KeyCode::Char('G') if self.section == Section::Sessions => {
-                        self.session_scroll(ScrollDirection::Bottom)
-                    }
-                    KeyCode::Char('g') if self.section == Section::Windows => {
-                        self.window_scroll(ScrollDirection::Top)
-                    }
-                    KeyCode::Char('G') if self.section == Section::Windows => {
-                        self.window_scroll(ScrollDirection::Bottom)
-                    }
-                    KeyCode::Char('h') => self.change_section(SectionDirection::Left),
-                    KeyCode::Char('l') => self.change_section(SectionDirection::Right),
-                    KeyCode::Char('H') => self.toggle_hidden(),
-                    KeyCode::Char('a') => self.toggle_is_adding(),
-                    KeyCode::Char('d') => self.toggle_is_killing(),
-                    KeyCode::Char('c') => self.toggle_is_renaming(),
-                    _ => {}
+                    (Char('h'), Sessions) => (),
+                    (Char('l'), Sessions) => self.go_to_section(Windows),
+                    (Char('H'), Sessions) => self.session_list.toggle_hidden(),
+
+                    (Char('j'), Windows) => self.window_list.scroll(Next),
+                    (Char('k'), Windows) => self.window_list.scroll(Prev),
+                    (Char('g'), Windows) => self.window_list.scroll(First),
+                    (Char('G'), Windows) => self.window_list.scroll(Last),
+                    (Char('h'), Windows) => self.go_to_section(Sessions),
+                    (Char('l'), Windows) => (),
+
+                    (Char('a'), _) => self.toggle_is_adding(),
+                    (Char('c'), _) => self.toggle_is_renaming(),
+                    _ => (),
                 }
             }
             _ => {}
@@ -133,38 +117,52 @@ impl App {
         Ok(())
     }
 
-    fn render_frame(&self, frame: &mut Frame) {
+    pub fn render_session_list(&mut self, area: Rect, buf: &mut Buffer) {
+        let block = Block::bordered()
+            .title(" Sessions ".bold())
+            .title(format!("{}", self.session_list.state.selected().unwrap()).bold());
+
+        let list: List = self
+            .session_list
+            .items
+            .iter()
+            .map(|s| &s.name as &str)
+            .collect();
+        let list = list.highlight_symbol("> ").block(block);
+
+        StatefulWidget::render(list, area, buf, &mut self.session_list.state);
+    }
+
+    pub fn render_window_list(&mut self, area: Rect, buf: &mut Buffer) {
+        let block = Block::bordered()
+            .title(" Windows ".bold())
+            .title(format!("{}", self.window_list.state.selected().unwrap()).bold());
+
+        let list: List = self
+            .window_list
+            .items
+            .iter()
+            .map(|w| &w.name as &str)
+            .collect();
+        let list = list.highlight_symbol("> ").block(block);
+
+        StatefulWidget::render(list, area, buf, &mut self.window_list.state);
+    }
+
+    fn load_sessions_list(&mut self) {
+        let sessions = SessionService::get_all().expect("error getting sessions");
+        self.session_list = StatefulList::default().with_items(sessions);
+    }
+
+    fn load_window_list(&mut self) {
+        let selected_session = &self.session_list.get_active_item().name;
+        let windows = WindowService::get_all(selected_session).expect("error getting windows");
+
+        self.window_list = StatefulList::default().with_items(windows);
+    }
+
+    fn render_frame(&mut self, frame: &mut Frame) {
         frame.render_widget(self, frame.area());
-    }
-
-    fn session_scroll(&mut self, dir: ScrollDirection) {
-        let max_index = self.get_visible_sessions().len() - 1;
-
-        self.selected_session_index = match (dir, self.selected_session_index) {
-            (ScrollDirection::Top, _) => 0,
-            (ScrollDirection::Bottom, _) => max_index,
-            (ScrollDirection::Down, x) if x == max_index => 0,
-            (ScrollDirection::Down, _) => self.selected_session_index + 1,
-            (ScrollDirection::Up, 0) => max_index,
-            (ScrollDirection::Up, _) => self.selected_session_index - 1,
-        };
-    }
-
-    fn window_scroll(&mut self, dir: ScrollDirection) {
-        let max_index: usize = self.get_windows().len() - 1;
-
-        self.selected_window_index = match (dir, self.selected_window_index) {
-            (ScrollDirection::Top, _) => 0,
-            (ScrollDirection::Bottom, _) => max_index,
-            (ScrollDirection::Down, x) if x == max_index => 0,
-            (ScrollDirection::Down, _) => self.selected_window_index + 1,
-            (ScrollDirection::Up, 0) => max_index,
-            (ScrollDirection::Up, _) => self.selected_window_index - 1,
-        };
-    }
-
-    fn toggle_hidden(&mut self) {
-        self.show_hidden = !self.show_hidden;
     }
 
     fn toggle_is_renaming(&mut self) {
@@ -174,45 +172,19 @@ impl App {
 
     fn toggle_is_adding(&mut self) {
         self.is_adding = !self.is_adding;
+
+        SessionService::create("newsesh").unwrap();
+        self.load_sessions_list();
+        self.load_window_list();
         todo!("handle action for both sections")
     }
 
     fn toggle_is_killing(&mut self) {
         self.is_killing = !self.is_killing;
-        todo!("handle action for both sections")
     }
 
-    fn change_section(&mut self, direction: SectionDirection) {
-        self.section = match direction {
-            //SectionDirection::Left if self.active_section == Section::Sessions => Section::Sessions,
-            SectionDirection::Left => {
-                //self.selected_session_index = 0;
-                Section::Sessions
-            }
-            //SectionDirection::Right if self.active_section == Section::Windows => Section::Windows,
-            SectionDirection::Right => {
-                //self.selected_window_index = 0;
-                Section::Windows
-            }
-        };
-    }
-
-    pub fn get_visible_sessions(&self) -> Vec<Session> {
-        match self.show_hidden {
-            true => self.sessions.clone(),
-            false => self
-                .sessions
-                .clone()
-                .into_iter()
-                .filter(|s| !s.is_hidden)
-                .collect(),
-        }
-    }
-
-    fn get_windows(&self) -> Vec<Window> {
-        self.get_visible_sessions()[self.selected_session_index]
-            .windows
-            .clone()
+    fn go_to_section(&mut self, section: Section) {
+        self.section = section;
     }
 
     fn exit(&mut self) {

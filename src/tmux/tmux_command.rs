@@ -84,7 +84,7 @@ impl TmuxCommand {
 
     pub fn create_session(name: &str) -> Result<()> {
         base_cmd()
-            .args(["new-session", "-s", name])
+            .args(["new-session", "-d", "-s", name])
             .output()
             .with_context(|| format!("new-session failed for session {}", name));
         Ok(())
