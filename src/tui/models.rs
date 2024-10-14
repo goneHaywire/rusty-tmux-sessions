@@ -15,6 +15,7 @@ use crate::tmux::{
 };
 
 use super::{
+    app_state::AppState,
     main::Tui,
     tmux_list::{ScrollDirection, StatefulList},
 };
@@ -31,10 +32,7 @@ pub struct App {
     session_list: StatefulList<Session>,
     window_list: StatefulList<Window>,
     section: Section,
-    is_renaming: bool,
-    is_killing: bool,
-    is_adding: bool,
-    exit: bool,
+    state: AppState,
 }
 
 impl Widget for &mut App {
@@ -51,7 +49,7 @@ impl App {
         self.load_sessions_list();
         self.load_window_list();
 
-        while !self.exit {
+        while !self.state.is_quitting() {
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events()?;
         }
@@ -70,14 +68,14 @@ impl App {
                 match (keycode, &self.section) {
                     (Char('q'), _) => self.exit(),
                     (Char('d'), _) => self.toggle_is_killing(),
-                    (Char('y'), _) if self.is_killing => {
+                    (Char('y'), _) if self.state.is_killing() => {
                         let curr_sesh = self.session_list.get_active_item();
                         let _ = SessionService::kill(&curr_sesh.name);
                         self.load_sessions_list();
                         self.load_window_list();
                         self.toggle_is_killing()
                     }
-                    _ if self.is_killing => self.toggle_is_killing(),
+                    _ if self.state.is_killing() => self.toggle_is_killing(),
 
                     (Char('j'), Sessions) => {
                         self.session_list.scroll(Next);
@@ -166,12 +164,12 @@ impl App {
     }
 
     fn toggle_is_renaming(&mut self) {
-        self.is_renaming = !self.is_renaming;
+        self.state = self.state.toggle_renaming();
         todo!("handle action for both sections")
     }
 
     fn toggle_is_adding(&mut self) {
-        self.is_adding = !self.is_adding;
+        self.state = self.state.toggle_creating();
 
         SessionService::create("newsesh").unwrap();
         self.load_sessions_list();
@@ -180,7 +178,7 @@ impl App {
     }
 
     fn toggle_is_killing(&mut self) {
-        self.is_killing = !self.is_killing;
+        self.state = self.state.toggle_deleting();
     }
 
     fn go_to_section(&mut self, section: Section) {
@@ -188,6 +186,6 @@ impl App {
     }
 
     fn exit(&mut self) {
-        self.exit = true;
+        self.state = self.state.quit();
     }
 }
