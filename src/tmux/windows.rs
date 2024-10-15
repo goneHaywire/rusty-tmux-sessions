@@ -67,7 +67,7 @@ impl WindowService {
         TmuxCommand::rename_window(old_name, new_name)
     }
 
-    fn attach(name: &str) -> Result<()> {
+    pub fn attach(name: &str) -> Result<()> {
         TmuxCommand::attach_window(name)
     }
 

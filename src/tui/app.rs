@@ -7,7 +7,11 @@ use ratatui::{
     Frame,
 };
 use ratatui_macros::horizontal;
-use std::io;
+use std::{
+    io,
+    sync::{Arc, Mutex},
+    thread::spawn,
+};
 
 use crate::tmux::{
     sessions::{Session, SessionService},
@@ -49,7 +53,7 @@ impl App {
         self.load_sessions_list();
         self.load_window_list();
 
-        while !self.state.is_quitting() {
+        while !self.state.should_exit() {
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events()?;
         }
@@ -96,6 +100,7 @@ impl App {
                     (Char('h'), Sessions) => (),
                     (Char('l'), Sessions) => self.go_to_section(Windows),
                     (Char('H'), Sessions) => self.session_list.toggle_hidden(),
+                    (Char(' '), Sessions) => self.attach_session(),
 
                     (Char('j'), Windows) => self.window_list.scroll(Next),
                     (Char('k'), Windows) => self.window_list.scroll(Prev),
@@ -103,6 +108,7 @@ impl App {
                     (Char('G'), Windows) => self.window_list.scroll(Last),
                     (Char('h'), Windows) => self.go_to_section(Sessions),
                     (Char('l'), Windows) => (),
+                    (Char(' '), Windows) => self.attach_window(),
 
                     (Char('a'), _) => self.toggle_is_adding(),
                     (Char('c'), _) => self.toggle_is_renaming(),
@@ -148,14 +154,33 @@ impl App {
     }
 
     fn load_sessions_list(&mut self) {
-        let sessions = SessionService::get_all().expect("error getting sessions");
+        let sessions = Arc::new(Mutex::new(vec![]));
+        let clone = sessions.clone();
+
+        spawn(move || {
+            let mut sessions = clone.lock().unwrap();
+            *sessions = SessionService::get_all().unwrap();
+        })
+        .join()
+        .expect("can't join from sessions thread");
+
+        let sessions = Arc::try_unwrap(sessions).unwrap().into_inner().unwrap();
         self.session_list = StatefulList::default().with_items(sessions);
     }
 
     fn load_window_list(&mut self) {
-        let selected_session = &self.session_list.get_active_item().name;
-        let windows = WindowService::get_all(selected_session).expect("error getting windows");
+        let selected_session = self.session_list.get_active_item().name;
+        let windows = Arc::new(Mutex::new(vec![]));
+        let clone = windows.clone();
 
+        spawn(move || {
+            let mut windows = clone.lock().unwrap();
+            *windows = WindowService::get_all(&selected_session).unwrap();
+        })
+        .join()
+        .expect("can't join from windows thread");
+
+        let windows = Arc::try_unwrap(windows).unwrap().into_inner().unwrap();
         self.window_list = StatefulList::default().with_items(windows);
     }
 
@@ -166,6 +191,18 @@ impl App {
     fn toggle_is_renaming(&mut self) {
         self.state = self.state.toggle_renaming();
         todo!("handle action for both sections")
+    }
+
+    fn attach_session(&mut self) {
+        let current_session = self.session_list.get_active_item().name;
+        let _ = SessionService::attach(&current_session);
+        self.state = self.state.exit();
+    }
+
+    fn attach_window(&mut self) {
+        let window = self.window_list.get_active_item().name;
+        let _ = WindowService::attach(&window);
+        self.state = self.state.exit();
     }
 
     fn toggle_is_adding(&mut self) {
@@ -186,6 +223,6 @@ impl App {
     }
 
     fn exit(&mut self) {
-        self.state = self.state.quit();
+        self.state = self.state.exit();
     }
 }

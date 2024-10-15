@@ -6,7 +6,7 @@ use std::{
     process::{exit, Command},
 };
 
-use tui::models::App;
+use tui::app::App;
 
 fn main() -> io::Result<()> {
     if Command::new("tmux").arg("-V").status().is_err() {

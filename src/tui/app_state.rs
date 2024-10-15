@@ -5,7 +5,7 @@ pub enum AppState {
     Creating,
     Deleting,
     Renaming,
-    Quitting,
+    Exiting,
 }
 
 impl AppState {
@@ -33,9 +33,9 @@ impl AppState {
         }
     }
 
-    pub fn quit(self) -> Self {
+    pub fn exit(self) -> Self {
         match self {
-            Self::Scrolling => Self::Quitting,
+            Self::Scrolling => Self::Exiting,
             v => v,
         }
     }
@@ -52,8 +52,8 @@ impl AppState {
         *self == Self::Creating
     }
 
-    pub fn is_quitting(&self) -> bool {
-        *self == Self::Quitting
+    pub fn should_exit(&self) -> bool {
+        *self == Self::Exiting
     }
 }
 
@@ -105,17 +105,17 @@ mod test {
     }
 
     #[test]
-    fn quit() {
+    fn exit() {
         let (mut scrolling, mut creating, mut renaming, mut deleting) =
             (Scrolling, Creating, Renaming, Deleting);
-        scrolling = scrolling.quit();
-        creating = creating.quit();
-        renaming = renaming.quit();
-        deleting = deleting.quit();
+        scrolling = scrolling.exit();
+        creating = creating.exit();
+        renaming = renaming.exit();
+        deleting = deleting.exit();
 
-        assert_eq!(scrolling, Quitting);
-        assert_ne!(creating, Quitting);
-        assert_ne!(renaming, Quitting);
-        assert_ne!(deleting, Quitting);
+        assert_eq!(scrolling, Exiting);
+        assert_ne!(creating, Exiting);
+        assert_ne!(renaming, Exiting);
+        assert_ne!(deleting, Exiting);
     }
 }
