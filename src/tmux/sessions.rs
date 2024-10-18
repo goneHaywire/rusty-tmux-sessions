@@ -11,11 +11,11 @@ use super::{tmux::TmuxEntity, tmux_command::TmuxCommand};
 #[derive(Debug, Clone)]
 pub struct Session {
     pub name: String,
-    pub is_attached: bool,
-    pub last_attached: Option<u64>,
-    pub created_at: u64,
-    pub windows_count: usize,
-    pub is_hidden: bool,
+    is_attached: bool,
+    last_attached: Option<u64>,
+    created_at: u64,
+    windows_count: usize,
+    is_hidden: bool,
 }
 
 impl Default for Session {

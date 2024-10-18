@@ -49,7 +49,7 @@ where
         self.show_hidden = !self.show_hidden;
     }
 
-    pub fn get_active_item(&mut self) -> T {
+    pub fn get_active_item(&self) -> T {
         let active_idx = self
             .state
             .selected()
