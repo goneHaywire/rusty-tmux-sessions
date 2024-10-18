@@ -1,7 +1,7 @@
 #[derive(Default, PartialEq, Clone, Copy, Debug)]
 pub enum AppState {
     #[default]
-    Scrolling,
+    Selecting,
     Creating,
     Deleting,
     Renaming,
@@ -11,31 +11,31 @@ pub enum AppState {
 impl AppState {
     pub fn toggle_creating(self) -> Self {
         match self {
-            Self::Creating => Self::Scrolling,
-            Self::Scrolling => Self::Creating,
+            Self::Creating => Self::Selecting,
+            Self::Selecting => Self::Creating,
             v => v,
         }
     }
 
     pub fn toggle_deleting(self) -> Self {
         match self {
-            Self::Deleting => Self::Scrolling,
-            Self::Scrolling => Self::Deleting,
+            Self::Deleting => Self::Selecting,
+            Self::Selecting => Self::Deleting,
             v => v,
         }
     }
 
     pub fn toggle_renaming(self) -> Self {
         match self {
-            Self::Renaming => Self::Scrolling,
-            Self::Scrolling => Self::Renaming,
+            Self::Renaming => Self::Selecting,
+            Self::Selecting => Self::Renaming,
             v => v,
         }
     }
 
     pub fn exit(self) -> Self {
         match self {
-            Self::Scrolling => Self::Exiting,
+            Self::Selecting => Self::Exiting,
             v => v,
         }
     }
@@ -64,12 +64,12 @@ mod test {
 
     #[test]
     fn toggle_creating() {
-        let scrolling = AppState::default();
-        let creating = scrolling.toggle_creating();
+        let selecting = AppState::default();
+        let creating = selecting.toggle_creating();
         assert_eq!(creating, Creating);
 
-        let scrolling = AppState::default();
-        assert_eq!(scrolling, Scrolling);
+        let selecting = AppState::default();
+        assert_eq!(selecting, Selecting);
 
         let mut other = Deleting;
         other = other.toggle_creating();
@@ -78,12 +78,12 @@ mod test {
 
     #[test]
     fn toggle_deleting() {
-        let scrolling = AppState::default();
-        let deleting = scrolling.toggle_deleting();
+        let selecting = AppState::default();
+        let deleting = selecting.toggle_deleting();
         assert_eq!(deleting, Deleting);
 
-        let scrolling = AppState::default();
-        assert_eq!(scrolling, Scrolling);
+        let selecting = AppState::default();
+        assert_eq!(selecting, Selecting);
 
         let mut other = Creating;
         other = other.toggle_deleting();
@@ -92,12 +92,12 @@ mod test {
 
     #[test]
     fn toggle_renaming() {
-        let scrolling = AppState::default();
-        let renaming = scrolling.toggle_renaming();
+        let selecting = AppState::default();
+        let renaming = selecting.toggle_renaming();
         assert_eq!(renaming, Renaming);
 
-        let scrolling = AppState::default();
-        assert_eq!(scrolling, Scrolling);
+        let selecting = AppState::default();
+        assert_eq!(selecting, Selecting);
 
         let mut other = Creating;
         other = other.toggle_renaming();
@@ -106,14 +106,14 @@ mod test {
 
     #[test]
     fn exit() {
-        let (mut scrolling, mut creating, mut renaming, mut deleting) =
-            (Scrolling, Creating, Renaming, Deleting);
-        scrolling = scrolling.exit();
+        let (mut selecting, mut creating, mut renaming, mut deleting) =
+            (Selecting, Creating, Renaming, Deleting);
+        selecting = selecting.exit();
         creating = creating.exit();
         renaming = renaming.exit();
         deleting = deleting.exit();
 
-        assert_eq!(scrolling, Exiting);
+        assert_eq!(selecting, Exiting);
         assert_ne!(creating, Exiting);
         assert_ne!(renaming, Exiting);
         assert_ne!(deleting, Exiting);

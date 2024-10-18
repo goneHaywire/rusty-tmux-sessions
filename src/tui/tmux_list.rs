@@ -4,7 +4,7 @@ use ratatui::widgets::ListState;
 
 use crate::tmux::tmux::TmuxEntity;
 
-pub enum ScrollDirection {
+pub enum Selection {
     Next,
     Prev,
     First,
@@ -57,15 +57,15 @@ where
         self.items.index(active_idx).clone()
     }
 
-    /// scroll function that handles 4 different cases
+    /// selection function that handles 4 different cases
     ///
-    /// * `direction`: ScrollDirection
-    pub fn scroll(&mut self, direction: ScrollDirection) {
-        use ScrollDirection::*;
+    /// * `selection`: Selection
+    pub fn select(&mut self, selection: Selection) {
+        use Selection::*;
         let last_index = self.items.len() - 1;
-        let current = self.state.selected().expect("invalid scroll");
+        let current = self.state.selected().expect("invalid selection");
 
-        match direction {
+        match selection {
             First => self.state.select_first(),
             Last => self.state.select(Some(last_index)),
             Next if current == last_index => self.state.select_first(),

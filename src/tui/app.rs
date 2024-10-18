@@ -21,7 +21,7 @@ use crate::tmux::{
 use super::{
     app_state::AppState,
     main::Tui,
-    tmux_list::{ScrollDirection, StatefulList},
+    tmux_list::{Selection, StatefulList},
 };
 
 #[derive(PartialEq, Default)]
@@ -62,8 +62,8 @@ impl App {
 
     pub fn handle_events(&mut self) -> io::Result<()> {
         use KeyCode::Char;
-        use ScrollDirection::*;
         use Section::*;
+        use Selection::*;
 
         match event::read()? {
             Event::Key(key_press) if key_press.kind == KeyEventKind::Press => {
@@ -82,19 +82,19 @@ impl App {
                     _ if self.state.is_killing() => self.toggle_is_killing(),
 
                     (Char('j'), Sessions) => {
-                        self.session_list.scroll(Next);
+                        self.session_list.select(Next);
                         self.load_window_list();
                     }
                     (Char('k'), Sessions) => {
-                        self.session_list.scroll(Prev);
+                        self.session_list.select(Prev);
                         self.load_window_list();
                     }
                     (Char('g'), Sessions) => {
-                        self.session_list.scroll(First);
+                        self.session_list.select(First);
                         self.load_window_list();
                     }
                     (Char('G'), Sessions) => {
-                        self.session_list.scroll(Last);
+                        self.session_list.select(Last);
                         self.load_window_list();
                     }
                     (Char('h'), Sessions) => (),
@@ -102,10 +102,10 @@ impl App {
                     (Char('H'), Sessions) => self.session_list.toggle_hidden(),
                     (Char(' '), Sessions) => self.attach_session(),
 
-                    (Char('j'), Windows) => self.window_list.scroll(Next),
-                    (Char('k'), Windows) => self.window_list.scroll(Prev),
-                    (Char('g'), Windows) => self.window_list.scroll(First),
-                    (Char('G'), Windows) => self.window_list.scroll(Last),
+                    (Char('j'), Windows) => self.window_list.select(Next),
+                    (Char('k'), Windows) => self.window_list.select(Prev),
+                    (Char('g'), Windows) => self.window_list.select(First),
+                    (Char('G'), Windows) => self.window_list.select(Last),
                     (Char('h'), Windows) => self.go_to_section(Sessions),
                     (Char('l'), Windows) => (),
                     (Char(' '), Windows) => self.attach_window(),
