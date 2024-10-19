@@ -21,6 +21,7 @@ use crate::tmux::{
 
 use super::{
     app_state::AppState,
+    input::InputState,
     main::Tui,
     tmux_list::{Selection, StatefulList},
 };
@@ -38,6 +39,7 @@ pub struct App {
     window_list: StatefulList<Window>,
     section: Section,
     state: AppState,
+    input: InputState,
 }
 
 impl Widget for &mut App {
@@ -74,6 +76,23 @@ impl App {
 
                 match (keycode, &self.section) {
                     (Char('q'), _) => self.exit(),
+
+                    // renaming handlers
+                    (Char(' '), Sessions) if self.state.is_renaming() => self.rename_session(),
+                    (Char(' '), Windows) if self.state.is_renaming() => self.rename_window(),
+
+                    // creating handlers
+                    (Char(' '), Sessions) if self.state.is_adding() => self.create_session(),
+                    (Char(' '), Windows) if self.state.is_adding() => self.create_window(),
+
+                    // renaming & creating
+                    (KeyCode::Esc, _) if self.state.is_renaming() || self.state.is_adding() => {
+                        self.cancel_input()
+                    }
+                    (key, _) if self.state.is_renaming() || self.state.is_adding() => {
+                        self.input.handle_key(key)
+                    }
+
                     (Char('d'), _) => self.toggle_is_killing(),
                     (Char('y'), _) if self.state.is_killing() => {
                         let curr_sesh = self.session_list.get_active_item();
@@ -100,7 +119,6 @@ impl App {
                         self.session_list.select(Last);
                         self.load_window_list();
                     }
-                    (Char('h'), Sessions) => (),
                     (Char('l'), Sessions) => self.go_to_section(Windows),
                     (Char('H'), Sessions) => self.session_list.toggle_hidden(),
                     (Char(' '), Sessions) => self.attach_session(),
@@ -110,7 +128,6 @@ impl App {
                     (Char('g'), Windows) => self.window_list.select(First),
                     (Char('G'), Windows) => self.window_list.select(Last),
                     (Char('h'), Windows) => self.go_to_section(Sessions),
-                    (Char('l'), Windows) => (),
                     (Char(' '), Windows) => self.attach_window(),
 
                     (Char('a'), _) => self.toggle_is_adding(),
@@ -201,11 +218,7 @@ impl App {
                 vec![" Press y to delete window or any other key to cancel ".red()]
             }
 
-            (Creating, Sessions) => vec!["creating".into()],
-            (Creating, Windows) => vec!["creating".into()],
-
-            (Renaming, Sessions) => vec!["renaming".into()],
-            (Renaming, Windows) => vec!["renaming".into()],
+            (Renaming | Creating, _) => vec![self.input.content.as_str().into()],
             _ => vec!["".into()],
         };
         let text = Text::from(Line::from(text));
@@ -259,7 +272,11 @@ impl App {
 
     fn toggle_is_renaming(&mut self) {
         self.state = self.state.toggle_renaming();
-        todo!("handle action for both sections")
+        let active_name = match &self.section {
+            Section::Sessions => self.session_list.get_active_item().name,
+            Section::Windows => self.window_list.get_active_item().name,
+        };
+        self.input = InputState::new(&active_name);
     }
 
     fn attach_session(&mut self) {
@@ -269,18 +286,58 @@ impl App {
     }
 
     fn attach_window(&mut self) {
+        let session = self.session_list.get_active_item().name;
         let window = self.window_list.get_active_item().name;
+        let _ = SessionService::attach(&session);
         let _ = WindowService::attach(&window);
         self.state = self.state.exit();
     }
 
+    fn rename_session(&mut self) {
+        let new_name = self.input.submit();
+        let old_name = self.session_list.get_active_item().name;
+        let _ = SessionService::rename(&old_name, &new_name);
+        self.load_sessions_list();
+        self.toggle_is_renaming();
+    }
+
+    fn rename_window(&mut self) {
+        let new_name = self.input.submit();
+        let old_name = self.window_list.get_active_item().name;
+        //dbg!(&new_name, &old_name);
+        let _ = WindowService::rename(&old_name, &new_name);
+        self.load_window_list();
+        self.toggle_is_renaming();
+    }
+
+    fn create_window(&mut self) {
+        let name = self.input.submit();
+        let curr_window_name = self.window_list.get_active_item().name.clone();
+        self.toggle_is_adding();
+
+        WindowService::create(&curr_window_name, &name);
+    }
+
+    fn create_session(&mut self) {
+        let name = self.input.submit();
+        self.toggle_is_adding();
+
+        SessionService::create(&name);
+        self.load_sessions_list();
+    }
+
+    fn cancel_input(&mut self) {
+        match self.state {
+            AppState::Creating => self.toggle_is_adding(),
+            AppState::Renaming => self.toggle_is_renaming(),
+            _ => {}
+        }
+        self.input.reset();
+    }
+
     fn toggle_is_adding(&mut self) {
         self.state = self.state.toggle_creating();
-
-        SessionService::create("newsesh").unwrap();
-        self.load_sessions_list();
-        self.load_window_list();
-        todo!("handle action for both sections")
+        self.input = InputState::default();
     }
 
     fn toggle_is_killing(&mut self) {

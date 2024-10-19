@@ -82,8 +82,8 @@ impl SessionService {
             .collect()
     }
 
-    pub fn create(name: &str) -> Result<()> {
-        TmuxCommand::create_session(name)
+    pub fn create(name: &str) {
+        let _ = TmuxCommand::create_session(name);
         //let sessions = Self::get_all("")?
         //    .iter()
         //    .find(|session| session.name == name)

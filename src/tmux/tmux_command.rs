@@ -43,7 +43,7 @@ impl TmuxCommand {
     }
 
     pub fn rename_window(old_name: &str, new_name: &str) -> Result<()> {
-        base_cmd()
+        let _ = base_cmd()
             .args(["rename-window", "-t", old_name, new_name])
             .output()
             .with_context(|| format!("rename-window failed for window {}", old_name));

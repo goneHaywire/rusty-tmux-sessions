@@ -55,15 +55,15 @@ impl WindowService {
             .collect()
     }
 
-    fn create(current_window_name: &str, name: &str) -> Result<()> {
-        TmuxCommand::create_window(current_window_name, name)
+    pub fn create(current_window_name: &str, name: &str) {
+        let _ = TmuxCommand::create_window(current_window_name, name);
     }
 
     fn kill(name: &str) -> Result<()> {
         TmuxCommand::kill_window(name)
     }
 
-    fn rename(old_name: &str, new_name: &str) -> Result<()> {
+    pub fn rename(old_name: &str, new_name: &str) -> Result<()> {
         TmuxCommand::rename_window(old_name, new_name)
     }
 
