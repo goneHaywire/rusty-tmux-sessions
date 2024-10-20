@@ -75,8 +75,6 @@ impl App {
                 let keycode = key_press.code;
 
                 match (keycode, &self.section) {
-                    (Char('q'), _) => self.exit(),
-
                     // renaming handlers
                     (Char(' '), Sessions) if self.state.is_renaming() => self.rename_session(),
                     (Char(' '), Windows) if self.state.is_renaming() => self.rename_window(),
@@ -118,7 +116,7 @@ impl App {
                     }
                     (Char('l'), Sessions) => self.go_to_section(Windows),
                     (Char('H'), Sessions) => self.session_list.toggle_hidden(),
-                    (Char(' '), Sessions) => self.attach_session(),
+                    (Char(' ') | KeyCode::Enter, Sessions) => self.attach_session(),
 
                     // selection handlers for windows
                     (Char('j'), Windows) => self.window_list.select(Next),
@@ -126,10 +124,12 @@ impl App {
                     (Char('g'), Windows) => self.window_list.select(First),
                     (Char('G'), Windows) => self.window_list.select(Last),
                     (Char('h'), Windows) => self.go_to_section(Sessions),
-                    (Char(' '), Windows) => self.attach_window(),
+                    (Char(' ') | KeyCode::Enter, Windows) => self.attach_window(),
 
                     (Char('a'), _) => self.toggle_is_adding(),
                     (Char('c'), _) => self.toggle_is_renaming(),
+
+                    (Char('q') | KeyCode::Esc, _) => self.exit(),
                     _ => (),
                 }
             }
