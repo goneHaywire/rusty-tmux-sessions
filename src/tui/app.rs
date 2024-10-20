@@ -93,16 +93,13 @@ impl App {
                         self.input.handle_key(key)
                     }
 
+                    // deletion handlers
                     (Char('d'), _) => self.toggle_is_killing(),
-                    (Char('y'), _) if self.state.is_killing() => {
-                        let curr_sesh = self.session_list.get_active_item();
-                        let _ = SessionService::kill(&curr_sesh.name);
-                        self.load_sessions_list();
-                        self.load_window_list();
-                        self.toggle_is_killing()
-                    }
+                    (Char('y'), Sessions) if self.state.is_killing() => self.kill_session(),
+                    (Char('y'), Windows) if self.state.is_killing() => self.kill_window(),
                     _ if self.state.is_killing() => self.toggle_is_killing(),
 
+                    // selection handlers for sessions
                     (Char('j'), Sessions) => {
                         self.session_list.select(Next);
                         self.load_window_list();
@@ -123,6 +120,7 @@ impl App {
                     (Char('H'), Sessions) => self.session_list.toggle_hidden(),
                     (Char(' '), Sessions) => self.attach_session(),
 
+                    // selection handlers for windows
                     (Char('j'), Windows) => self.window_list.select(Next),
                     (Char('k'), Windows) => self.window_list.select(Prev),
                     (Char('g'), Windows) => self.window_list.select(First),
@@ -281,31 +279,33 @@ impl App {
 
     fn attach_session(&mut self) {
         let current_session = self.session_list.get_active_item().name;
-        let _ = SessionService::attach(&current_session);
+        SessionService::attach(&current_session);
         self.state = self.state.exit();
     }
 
     fn attach_window(&mut self) {
         let session = self.session_list.get_active_item().name;
         let window = self.window_list.get_active_item().name;
-        let _ = SessionService::attach(&session);
-        let _ = WindowService::attach(&window);
+
+        WindowService::attach(&session, &window);
         self.state = self.state.exit();
     }
 
     fn rename_session(&mut self) {
         let new_name = self.input.submit();
         let old_name = self.session_list.get_active_item().name;
-        let _ = SessionService::rename(&old_name, &new_name);
+
+        SessionService::rename(&old_name, &new_name);
         self.load_sessions_list();
         self.toggle_is_renaming();
     }
 
     fn rename_window(&mut self) {
+        let session_name = self.session_list.get_active_item().name;
         let new_name = self.input.submit();
         let old_name = self.window_list.get_active_item().name;
-        //dbg!(&new_name, &old_name);
-        let _ = WindowService::rename(&old_name, &new_name);
+
+        WindowService::rename(&session_name, &old_name, &new_name);
         self.load_window_list();
         self.toggle_is_renaming();
     }
@@ -313,9 +313,11 @@ impl App {
     fn create_window(&mut self) {
         let name = self.input.submit();
         let curr_window_name = self.window_list.get_active_item().name.clone();
+        let session = self.session_list.get_active_item().name;
         self.toggle_is_adding();
 
-        WindowService::create(&curr_window_name, &name);
+        WindowService::create(&session, &curr_window_name, &name);
+        self.load_window_list();
     }
 
     fn create_session(&mut self) {
@@ -324,6 +326,25 @@ impl App {
 
         SessionService::create(&name);
         self.load_sessions_list();
+    }
+
+    fn kill_session(&mut self) {
+        let session = self.session_list.get_active_item().name;
+        SessionService::kill(&session);
+        self.toggle_is_killing();
+        self.load_sessions_list();
+    }
+
+    fn kill_window(&mut self) {
+        let session = self.session_list.get_active_item().name;
+        let window = self.window_list.get_active_item().name;
+        WindowService::kill(&session, &window);
+        self.toggle_is_killing();
+        if self.window_list.items.len() == 1 {
+            self.load_sessions_list();
+            self.go_to_section(Section::Sessions);
+        }
+        self.load_window_list();
     }
 
     fn cancel_input(&mut self) {

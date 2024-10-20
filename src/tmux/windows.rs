@@ -43,8 +43,6 @@ pub struct WindowService;
 
 impl WindowService {
     pub fn get_all(session_name: &str) -> Result<Vec<Window>> {
-        //let windows = WindowService::list(Some(session_name))?;
-        //let session = session.expect("no session passed to WindowService::get_all");
         let windows = TmuxCommand::list_windows(session_name)?;
 
         str::from_utf8(&windows)
@@ -55,27 +53,27 @@ impl WindowService {
             .collect()
     }
 
-    pub fn create(current_window_name: &str, name: &str) {
-        let _ = TmuxCommand::create_window(current_window_name, name);
+    pub fn create(session_name: &str, current_window_name: &str, name: &str) {
+        TmuxCommand::create_window(session_name, current_window_name, name);
     }
 
-    fn kill(name: &str) -> Result<()> {
-        TmuxCommand::kill_window(name)
+    pub fn kill(session_name: &str, name: &str) {
+        TmuxCommand::kill_window(session_name, name);
     }
 
-    pub fn rename(old_name: &str, new_name: &str) -> Result<()> {
-        TmuxCommand::rename_window(old_name, new_name)
+    pub fn rename(session_name: &str, old_name: &str, new_name: &str) {
+        TmuxCommand::rename_window(session_name, old_name, new_name);
     }
 
-    pub fn attach(name: &str) -> Result<()> {
-        TmuxCommand::attach_window(name)
+    pub fn attach(session_name: &str, name: &str) {
+        TmuxCommand::attach_window(session_name, name);
     }
 
-    fn show(name: &str) -> Result<()> {
+    fn show(name: &str) {
         todo!();
     }
 
-    fn hide(name: &str) -> Result<()> {
+    fn hide(name: &str) {
         todo!();
     }
 }

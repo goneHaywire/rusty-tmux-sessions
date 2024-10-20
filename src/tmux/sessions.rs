@@ -91,23 +91,23 @@ impl SessionService {
         //let session = Session::default().with_name(name);
     }
 
-    pub fn kill(name: &str) -> Result<()> {
-        TmuxCommand::kill_session(name)
+    pub fn kill(name: &str) {
+        TmuxCommand::kill_session(name);
     }
 
-    pub fn rename(old_name: &str, new_name: &str) -> Result<()> {
-        TmuxCommand::rename_session(old_name, new_name)
+    pub fn rename(old_name: &str, new_name: &str) {
+        TmuxCommand::rename_session(old_name, new_name);
     }
 
-    pub fn attach(name: &str) -> Result<()> {
-        TmuxCommand::attach_session(name)
+    pub fn attach(name: &str) {
+        TmuxCommand::attach_session(name);
     }
 
-    pub fn hide(name: &str) -> Result<()> {
+    pub fn hide(name: &str) {
         todo!();
     }
 
-    pub fn show(name: &str) -> Result<()> {
+    pub fn show(name: &str) {
         todo!();
     }
 }
