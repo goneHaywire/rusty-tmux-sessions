@@ -1,5 +1,5 @@
 #[derive(Default, PartialEq, Clone, Copy, Debug)]
-pub enum AppState {
+pub enum Mode {
     #[default]
     Selecting,
     Creating,
@@ -8,7 +8,7 @@ pub enum AppState {
     Exiting,
 }
 
-impl AppState {
+impl Mode {
     pub fn toggle_creating(self) -> Self {
         match self {
             Self::Creating => Self::Selecting,
@@ -59,16 +59,16 @@ impl AppState {
 
 #[cfg(test)]
 mod test {
-    use super::AppState;
-    use super::AppState::*;
+    use super::Mode;
+    use super::Mode::*;
 
     #[test]
     fn toggle_creating() {
-        let selecting = AppState::default();
+        let selecting = Mode::default();
         let creating = selecting.toggle_creating();
         assert_eq!(creating, Creating);
 
-        let selecting = AppState::default();
+        let selecting = Mode::default();
         assert_eq!(selecting, Selecting);
 
         let mut other = Deleting;
@@ -78,11 +78,11 @@ mod test {
 
     #[test]
     fn toggle_deleting() {
-        let selecting = AppState::default();
+        let selecting = Mode::default();
         let deleting = selecting.toggle_deleting();
         assert_eq!(deleting, Deleting);
 
-        let selecting = AppState::default();
+        let selecting = Mode::default();
         assert_eq!(selecting, Selecting);
 
         let mut other = Creating;
@@ -92,11 +92,11 @@ mod test {
 
     #[test]
     fn toggle_renaming() {
-        let selecting = AppState::default();
+        let selecting = Mode::default();
         let renaming = selecting.toggle_renaming();
         assert_eq!(renaming, Renaming);
 
-        let selecting = AppState::default();
+        let selecting = Mode::default();
         assert_eq!(selecting, Selecting);
 
         let mut other = Creating;

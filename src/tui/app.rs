@@ -1,12 +1,4 @@
-use ratatui::{
-    buffer::Buffer,
-    crossterm::event::{self, Event, KeyCode, KeyEventKind},
-    layout::Rect,
-    style::{Style, Stylize},
-    text::{Line, Text},
-    widgets::{block::Title, Block, BorderType, List, Paragraph, StatefulWidget, Widget},
-};
-use ratatui_macros::{horizontal, vertical};
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use std::{
     io,
     sync::{Arc, Mutex},
@@ -19,11 +11,9 @@ use crate::tmux::{
 };
 
 use super::{
-    app_state::AppState,
     input::InputState,
-    main::Tui,
+    mode::Mode,
     tmux_list::{Selection, StatefulList},
-    widgets::footer::Footer,
 };
 
 #[derive(PartialEq, Default)]
@@ -33,29 +23,33 @@ pub enum Section {
     Windows,
 }
 
-//#[derive(Default)]
+#[derive(Default)]
 pub struct App {
-    session_list: StatefulList<Session>,
-    window_list: StatefulList<Window>,
-    section: Section,
-    state: AppState,
-    input: InputState,
-    footer: Footer,
+    // TODO: add the structs of other widgets
+    // since the App controls state, it will modify the state of each widget
+    // for ex. the scrolling of the lists will be handled by the structs of each list widget
+    // the App will handle the fetching of the data from tmux and persisting it
+    pub session_list: StatefulList<Session>,
+    pub window_list: StatefulList<Window>,
+    pub section: Section,
+    pub mode: Mode,
+    pub input: InputState,
 }
 
 impl App {
-    pub fn run(&mut self, terminal: &mut Tui) -> io::Result<()> {
-        self.load_sessions_list();
-        self.load_window_list();
-
-        while !self.state.should_exit() {
-            terminal.draw(|frame| {
-                frame.render_stateful_widget(AppWidget, frame.area(), self);
-            })?;
-            self.handle_events()?;
-        }
-        Ok(())
-    }
+    // pub fn run(&mut self, terminal: &mut Tui) -> io::Result<()> {
+    //     self.load_sessions_list();
+    //     self.load_window_list();
+    //
+    //     while !self.state.should_exit() {
+    //         terminal.draw(|frame| {
+    //             view::render(frame, self);
+    //             // frame.render_stateful_widget(AppWidget, frame.area(), self);
+    //         })?;
+    //         self.handle_events()?;
+    //     }
+    //     Ok(())
+    // }
 
     fn handle_events(&mut self) -> io::Result<()> {
         use KeyCode::Char;
@@ -68,26 +62,26 @@ impl App {
 
                 match (keycode, &self.section) {
                     // renaming handlers
-                    (Char(' '), Sessions) if self.state.is_renaming() => self.rename_session(),
-                    (Char(' '), Windows) if self.state.is_renaming() => self.rename_window(),
+                    (Char(' '), Sessions) if self.mode.is_renaming() => self.rename_session(),
+                    (Char(' '), Windows) if self.mode.is_renaming() => self.rename_window(),
 
                     // creating handlers
-                    (Char(' '), Sessions) if self.state.is_adding() => self.create_session(),
-                    (Char(' '), Windows) if self.state.is_adding() => self.create_window(),
+                    (Char(' '), Sessions) if self.mode.is_adding() => self.create_session(),
+                    (Char(' '), Windows) if self.mode.is_adding() => self.create_window(),
 
                     // renaming & creating
-                    (KeyCode::Esc, _) if self.state.is_renaming() || self.state.is_adding() => {
+                    (KeyCode::Esc, _) if self.mode.is_renaming() || self.mode.is_adding() => {
                         self.cancel_input()
                     }
-                    (key, _) if self.state.is_renaming() || self.state.is_adding() => {
+                    (key, _) if self.mode.is_renaming() || self.mode.is_adding() => {
                         self.input.handle_key(key)
                     }
 
                     // deletion handlers
                     (Char('d'), _) => self.toggle_is_killing(),
-                    (Char('y'), Sessions) if self.state.is_killing() => self.kill_session(),
-                    (Char('y'), Windows) if self.state.is_killing() => self.kill_window(),
-                    _ if self.state.is_killing() => self.toggle_is_killing(),
+                    (Char('y'), Sessions) if self.mode.is_killing() => self.kill_session(),
+                    (Char('y'), Windows) if self.mode.is_killing() => self.kill_window(),
+                    _ if self.mode.is_killing() => self.toggle_is_killing(),
 
                     // selection handlers for sessions
                     (Char('j'), Sessions) => {
@@ -163,7 +157,7 @@ impl App {
     }
 
     fn toggle_is_renaming(&mut self) {
-        self.state = self.state.toggle_renaming();
+        self.mode = self.mode.toggle_renaming();
         let active_name = match &self.section {
             Section::Sessions => self.session_list.get_active_item().name,
             Section::Windows => self.window_list.get_active_item().name,
@@ -174,7 +168,7 @@ impl App {
     fn attach_session(&mut self) {
         let current_session = self.session_list.get_active_item().name;
         SessionService::attach(&current_session);
-        self.state = self.state.exit();
+        self.mode = self.mode.exit();
     }
 
     fn attach_window(&mut self) {
@@ -182,7 +176,7 @@ impl App {
         let window = self.window_list.get_active_item().name;
 
         WindowService::attach(&session, &window);
-        self.state = self.state.exit();
+        self.mode = self.mode.exit();
     }
 
     fn rename_session(&mut self) {
@@ -242,21 +236,21 @@ impl App {
     }
 
     fn cancel_input(&mut self) {
-        match self.state {
-            AppState::Creating => self.toggle_is_adding(),
-            AppState::Renaming => self.toggle_is_renaming(),
+        match self.mode {
+            Mode::Creating => self.toggle_is_adding(),
+            Mode::Renaming => self.toggle_is_renaming(),
             _ => {}
         }
         self.input.reset();
     }
 
     fn toggle_is_adding(&mut self) {
-        self.state = self.state.toggle_creating();
+        self.mode = self.mode.toggle_creating();
         self.input = InputState::default();
     }
 
     fn toggle_is_killing(&mut self) {
-        self.state = self.state.toggle_deleting();
+        self.mode = self.mode.toggle_deleting();
     }
 
     fn go_to_section(&mut self, section: Section) {
@@ -264,117 +258,6 @@ impl App {
     }
 
     fn exit(&mut self) {
-        self.state = self.state.exit();
-    }
-}
-
-struct AppWidget;
-
-impl StatefulWidget for AppWidget {
-    type State = App;
-
-    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let [body, footer_area] = vertical![*=1, ==3].areas(area);
-        let [session_area, window_area] = horizontal![==50%, ==50%].areas(body);
-
-        state.render_session_list(session_area, buf);
-        state.render_window_list(window_area, buf);
-        state.render_footer(footer_area, buf);
-    }
-}
-
-impl App {
-    fn render_session_list(&mut self, area: Rect, buf: &mut Buffer) {
-        let block = Block::bordered()
-            .border_type(BorderType::Thick)
-            .title(" Sessions ".bold());
-
-        let list: List = self
-            .session_list
-            .items
-            .iter()
-            .map(|s| &s.name as &str)
-            .collect();
-        let list = list.highlight_symbol("> ").block(block);
-
-        StatefulWidget::render(list, area, buf, &mut self.session_list.state);
-    }
-
-    fn render_window_list(&mut self, area: Rect, buf: &mut Buffer) {
-        let block = Block::bordered()
-            .border_type(BorderType::Thick)
-            .title(" Windows ".bold());
-
-        let list: List = self
-            .window_list
-            .items
-            .iter()
-            .map(|w| &w.name as &str)
-            .collect();
-        let list = list.highlight_symbol("> ").block(block);
-
-        StatefulWidget::render(list, area, buf, &mut self.window_list.state);
-    }
-
-    fn render_footer(&self, footer_area: Rect, buf: &mut Buffer) {
-        use AppState::*;
-        use Section::*;
-
-        let active_item = match self.section {
-            Sessions => self.session_list.get_active_item().name,
-            Windows => self.window_list.get_active_item().name,
-        };
-        let active_item = active_item.as_str().bold();
-
-        let title = match (&self.state, &self.section) {
-            (Selecting, Sessions) => vec![" Session: ".into(), active_item.green(), " ".into()],
-            (Selecting, Windows) => vec![" Window: ".into(), active_item.green(), " ".into()],
-
-            (Creating, Sessions) => vec![" Enter new session name ".yellow()],
-            (Creating, Windows) => vec![" Enter new window name ".yellow()],
-
-            (Deleting, Sessions) => vec![" Window: ".into(), active_item.red(), " ".into()],
-            (Deleting, Windows) => vec![" Window: ".into(), active_item.red(), " ".into()],
-
-            (Renaming, Sessions) => vec![
-                " Enter new name for session ".into(),
-                active_item.magenta(),
-                " ".into(),
-            ],
-            (Renaming, Windows) => vec![
-                " Enter new name for window ".into(),
-                active_item.magenta(),
-                " ".into(),
-            ],
-            _ => vec!["".into()],
-        };
-        let title = Title::from(Line::from(title));
-
-        let text = match (&self.state, &self.section) {
-            (Selecting, Sessions) => vec!["selecting".into()],
-            (Selecting, Windows) => vec!["selecting".into()],
-
-            (Deleting, Sessions) => {
-                vec![" Press y to delete session or any other key to cancel ".red()]
-            }
-            (Deleting, Windows) => {
-                vec![" Press y to delete window or any other key to cancel ".red()]
-            }
-
-            (Renaming | Creating, _) => vec![self.input.content.as_str().into()],
-            _ => vec!["".into()],
-        };
-        let text = Text::from(Line::from(text));
-
-        let block = Block::bordered()
-            .border_type(BorderType::Thick)
-            .title(title);
-        let block = match self.state {
-            Deleting => block.border_style(Style::default().red()),
-            Creating => block.border_style(Style::default().green()),
-            _ => block,
-        };
-
-        Paragraph::new(text).block(block).render(footer_area, buf);
+        self.mode = self.mode.exit();
     }
 }
