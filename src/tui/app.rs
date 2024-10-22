@@ -5,7 +5,6 @@ use ratatui::{
     style::{Style, Stylize},
     text::{Line, Text},
     widgets::{block::Title, Block, BorderType, List, Paragraph, StatefulWidget, Widget},
-    Frame,
 };
 use ratatui_macros::{horizontal, vertical};
 use std::{
@@ -24,33 +23,24 @@ use super::{
     input::InputState,
     main::Tui,
     tmux_list::{Selection, StatefulList},
+    widgets::footer::Footer,
 };
 
 #[derive(PartialEq, Default)]
-enum Section {
+pub enum Section {
     #[default]
     Sessions,
     Windows,
 }
 
-#[derive(Default)]
+//#[derive(Default)]
 pub struct App {
     session_list: StatefulList<Session>,
     window_list: StatefulList<Window>,
     section: Section,
     state: AppState,
     input: InputState,
-}
-
-impl Widget for &mut App {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut Buffer) {
-        let [body, footer_area] = vertical![*=1, ==3].areas(area);
-        let [session_area, window_area] = horizontal![==50%, ==50%].areas(body);
-
-        self.render_session_list(session_area, buf);
-        self.render_window_list(window_area, buf);
-        self.render_footer(footer_area, buf);
-    }
+    footer: Footer,
 }
 
 impl App {
@@ -59,7 +49,9 @@ impl App {
         self.load_window_list();
 
         while !self.state.should_exit() {
-            terminal.draw(|frame| self.render_frame(frame))?;
+            terminal.draw(|frame| {
+                frame.render_stateful_widget(AppWidget, frame.area(), self);
+            })?;
             self.handle_events()?;
         }
         Ok(())
@@ -139,100 +131,6 @@ impl App {
         Ok(())
     }
 
-    fn render_session_list(&mut self, area: Rect, buf: &mut Buffer) {
-        let block = Block::bordered()
-            .border_type(BorderType::Thick)
-            .title(" Sessions ".bold());
-
-        let list: List = self
-            .session_list
-            .items
-            .iter()
-            .map(|s| &s.name as &str)
-            .collect();
-        let list = list.highlight_symbol("> ").block(block);
-
-        StatefulWidget::render(list, area, buf, &mut self.session_list.state);
-    }
-
-    fn render_window_list(&mut self, area: Rect, buf: &mut Buffer) {
-        let block = Block::bordered()
-            .border_type(BorderType::Thick)
-            .title(" Windows ".bold());
-
-        let list: List = self
-            .window_list
-            .items
-            .iter()
-            .map(|w| &w.name as &str)
-            .collect();
-        let list = list.highlight_symbol("> ").block(block);
-
-        StatefulWidget::render(list, area, buf, &mut self.window_list.state);
-    }
-
-    fn render_footer(&self, footer_area: Rect, buf: &mut Buffer) {
-        use AppState::*;
-        use Section::*;
-
-        let active_item = match self.section {
-            Sessions => self.session_list.get_active_item().name,
-            Windows => self.window_list.get_active_item().name,
-        };
-        let active_item = active_item.as_str().bold();
-
-        let title = match (&self.state, &self.section) {
-            (Selecting, Sessions) => vec![" Session: ".into(), active_item.green(), " ".into()],
-            (Selecting, Windows) => vec![" Window: ".into(), active_item.green(), " ".into()],
-
-            (Creating, Sessions) => vec![" Enter new session name ".yellow()],
-            (Creating, Windows) => vec![" Enter new window name ".yellow()],
-
-            (Deleting, Sessions) => vec![" Window: ".into(), active_item.red(), " ".into()],
-            (Deleting, Windows) => vec![" Window: ".into(), active_item.red(), " ".into()],
-
-            (Renaming, Sessions) => vec![
-                " Enter new name for session ".into(),
-                active_item.magenta(),
-                " ".into(),
-            ],
-            (Renaming, Windows) => vec![
-                " Enter new name for window ".into(),
-                active_item.magenta(),
-                " ".into(),
-            ],
-            _ => vec!["".into()],
-        };
-        let title = Title::from(Line::from(title));
-
-        let text = match (&self.state, &self.section) {
-            (Selecting, Sessions) => vec!["selecting".into()],
-            (Selecting, Windows) => vec!["selecting".into()],
-
-            (Deleting, Sessions) => {
-                vec![" Press y to delete session or any other key to cancel ".red()]
-            }
-            (Deleting, Windows) => {
-                vec![" Press y to delete window or any other key to cancel ".red()]
-            }
-
-            (Renaming | Creating, _) => vec![self.input.content.as_str().into()],
-            _ => vec!["".into()],
-        };
-        let text = Text::from(Line::from(text));
-
-        let block = Block::bordered()
-            .border_type(BorderType::Thick)
-            .title(title);
-        let block = match self.state {
-            Deleting => block.border_style(Style::default().red()),
-            Creating => block.border_style(Style::default().green()),
-            _ => block,
-        };
-
-        Paragraph::new(text).block(block).render(footer_area, buf);
-    }
-
     fn load_sessions_list(&mut self) {
         let sessions = Arc::new(Mutex::new(vec![]));
         let clone = sessions.clone();
@@ -262,10 +160,6 @@ impl App {
 
         let windows = Arc::try_unwrap(windows).unwrap().into_inner().unwrap();
         self.window_list = StatefulList::default().with_items(windows);
-    }
-
-    fn render_frame(&mut self, frame: &mut Frame) {
-        frame.render_widget(self, frame.area());
     }
 
     fn toggle_is_renaming(&mut self) {
@@ -371,5 +265,116 @@ impl App {
 
     fn exit(&mut self) {
         self.state = self.state.exit();
+    }
+}
+
+struct AppWidget;
+
+impl StatefulWidget for AppWidget {
+    type State = App;
+
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        let [body, footer_area] = vertical![*=1, ==3].areas(area);
+        let [session_area, window_area] = horizontal![==50%, ==50%].areas(body);
+
+        state.render_session_list(session_area, buf);
+        state.render_window_list(window_area, buf);
+        state.render_footer(footer_area, buf);
+    }
+}
+
+impl App {
+    fn render_session_list(&mut self, area: Rect, buf: &mut Buffer) {
+        let block = Block::bordered()
+            .border_type(BorderType::Thick)
+            .title(" Sessions ".bold());
+
+        let list: List = self
+            .session_list
+            .items
+            .iter()
+            .map(|s| &s.name as &str)
+            .collect();
+        let list = list.highlight_symbol("> ").block(block);
+
+        StatefulWidget::render(list, area, buf, &mut self.session_list.state);
+    }
+
+    fn render_window_list(&mut self, area: Rect, buf: &mut Buffer) {
+        let block = Block::bordered()
+            .border_type(BorderType::Thick)
+            .title(" Windows ".bold());
+
+        let list: List = self
+            .window_list
+            .items
+            .iter()
+            .map(|w| &w.name as &str)
+            .collect();
+        let list = list.highlight_symbol("> ").block(block);
+
+        StatefulWidget::render(list, area, buf, &mut self.window_list.state);
+    }
+
+    fn render_footer(&self, footer_area: Rect, buf: &mut Buffer) {
+        use AppState::*;
+        use Section::*;
+
+        let active_item = match self.section {
+            Sessions => self.session_list.get_active_item().name,
+            Windows => self.window_list.get_active_item().name,
+        };
+        let active_item = active_item.as_str().bold();
+
+        let title = match (&self.state, &self.section) {
+            (Selecting, Sessions) => vec![" Session: ".into(), active_item.green(), " ".into()],
+            (Selecting, Windows) => vec![" Window: ".into(), active_item.green(), " ".into()],
+
+            (Creating, Sessions) => vec![" Enter new session name ".yellow()],
+            (Creating, Windows) => vec![" Enter new window name ".yellow()],
+
+            (Deleting, Sessions) => vec![" Window: ".into(), active_item.red(), " ".into()],
+            (Deleting, Windows) => vec![" Window: ".into(), active_item.red(), " ".into()],
+
+            (Renaming, Sessions) => vec![
+                " Enter new name for session ".into(),
+                active_item.magenta(),
+                " ".into(),
+            ],
+            (Renaming, Windows) => vec![
+                " Enter new name for window ".into(),
+                active_item.magenta(),
+                " ".into(),
+            ],
+            _ => vec!["".into()],
+        };
+        let title = Title::from(Line::from(title));
+
+        let text = match (&self.state, &self.section) {
+            (Selecting, Sessions) => vec!["selecting".into()],
+            (Selecting, Windows) => vec!["selecting".into()],
+
+            (Deleting, Sessions) => {
+                vec![" Press y to delete session or any other key to cancel ".red()]
+            }
+            (Deleting, Windows) => {
+                vec![" Press y to delete window or any other key to cancel ".red()]
+            }
+
+            (Renaming | Creating, _) => vec![self.input.content.as_str().into()],
+            _ => vec!["".into()],
+        };
+        let text = Text::from(Line::from(text));
+
+        let block = Block::bordered()
+            .border_type(BorderType::Thick)
+            .title(title);
+        let block = match self.state {
+            Deleting => block.border_style(Style::default().red()),
+            Creating => block.border_style(Style::default().green()),
+            _ => block,
+        };
+
+        Paragraph::new(text).block(block).render(footer_area, buf);
     }
 }
