@@ -30,21 +30,21 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     let active_item = active_item.as_str().bold();
 
     let title = match (&app.mode, &app.section) {
-        (Selecting, Sessions) => vec![" Session: ".into(), active_item.green(), " ".into()],
-        (Selecting, Windows) => vec![" Window: ".into(), active_item.green(), " ".into()],
+        (Select, Sessions) => vec![" Session: ".into(), active_item.green(), " ".into()],
+        (Select, Windows) => vec![" Window: ".into(), active_item.green(), " ".into()],
 
-        (Creating, Sessions) => vec![" Enter new session name ".yellow()],
-        (Creating, Windows) => vec![" Enter new window name ".yellow()],
+        (Create, Sessions) => vec![" Enter new session name ".yellow()],
+        (Create, Windows) => vec![" Enter new window name ".yellow()],
 
-        (Deleting, Sessions) => vec![" Window: ".into(), active_item.red(), " ".into()],
-        (Deleting, Windows) => vec![" Window: ".into(), active_item.red(), " ".into()],
+        (Delete, Sessions) => vec![" Window: ".into(), active_item.red(), " ".into()],
+        (Delete, Windows) => vec![" Window: ".into(), active_item.red(), " ".into()],
 
-        (Renaming, Sessions) => vec![
+        (Rename, Sessions) => vec![
             " Enter new name for session ".into(),
             active_item.magenta(),
             " ".into(),
         ],
-        (Renaming, Windows) => vec![
+        (Rename, Windows) => vec![
             " Enter new name for window ".into(),
             active_item.magenta(),
             " ".into(),
@@ -54,17 +54,17 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     let title = Title::from(Line::from(title));
 
     let text = match (&app.mode, &app.section) {
-        (Selecting, Sessions) => vec!["selecting".into()],
-        (Selecting, Windows) => vec!["selecting".into()],
+        (Select, Sessions) => vec!["selecting".into()],
+        (Select, Windows) => vec!["selecting".into()],
 
-        (Deleting, Sessions) => {
+        (Delete, Sessions) => {
             vec![" Press y to delete session or any other key to cancel ".red()]
         }
-        (Deleting, Windows) => {
+        (Delete, Windows) => {
             vec![" Press y to delete window or any other key to cancel ".red()]
         }
 
-        (Renaming | Creating, _) => vec![app.input.content.as_str().into()],
+        (Rename | Create, _) => vec![app.input.content.as_str().into()],
         _ => vec!["".into()],
     };
     let text = Text::from(Line::from(text));
@@ -73,8 +73,8 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         .border_type(BorderType::Thick)
         .title(title);
     let block = match app.mode {
-        Deleting => block.border_style(Style::default().red()),
-        Creating => block.border_style(Style::default().green()),
+        Delete => block.border_style(Style::default().red()),
+        Create => block.border_style(Style::default().green()),
         _ => block,
     };
 

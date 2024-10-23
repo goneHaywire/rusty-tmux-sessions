@@ -1,59 +1,60 @@
 #[derive(Default, PartialEq, Clone, Copy, Debug)]
 pub enum Mode {
     #[default]
-    Selecting,
-    Creating,
-    Deleting,
-    Renaming,
-    Exiting,
+    Select,
+    Create,
+    Delete,
+    Rename,
+    Help,
+    Exit,
 }
 
 impl Mode {
-    pub fn toggle_creating(self) -> Self {
+    pub fn toggle_create(self) -> Self {
         match self {
-            Self::Creating => Self::Selecting,
-            Self::Selecting => Self::Creating,
+            Self::Create => Self::Select,
+            Self::Select => Self::Create,
             v => v,
         }
     }
 
-    pub fn toggle_deleting(self) -> Self {
+    pub fn toggle_delete(self) -> Self {
         match self {
-            Self::Deleting => Self::Selecting,
-            Self::Selecting => Self::Deleting,
+            Self::Delete => Self::Select,
+            Self::Select => Self::Delete,
             v => v,
         }
     }
 
-    pub fn toggle_renaming(self) -> Self {
+    pub fn toggle_rename(self) -> Self {
         match self {
-            Self::Renaming => Self::Selecting,
-            Self::Selecting => Self::Renaming,
+            Self::Rename => Self::Select,
+            Self::Select => Self::Rename,
             v => v,
         }
     }
 
     pub fn exit(self) -> Self {
         match self {
-            Self::Selecting => Self::Exiting,
+            Self::Select => Self::Exit,
             v => v,
         }
     }
 
     pub fn is_killing(&self) -> bool {
-        *self == Self::Deleting
+        *self == Self::Delete
     }
 
     pub fn is_renaming(&self) -> bool {
-        *self == Self::Renaming
+        *self == Self::Rename
     }
 
     pub fn is_adding(&self) -> bool {
-        *self == Self::Creating
+        *self == Self::Create
     }
 
     pub fn should_exit(&self) -> bool {
-        *self == Self::Exiting
+        *self == Self::Exit
     }
 }
 
@@ -65,57 +66,57 @@ mod test {
     #[test]
     fn toggle_creating() {
         let selecting = Mode::default();
-        let creating = selecting.toggle_creating();
-        assert_eq!(creating, Creating);
+        let creating = selecting.toggle_create();
+        assert_eq!(creating, Create);
 
         let selecting = Mode::default();
-        assert_eq!(selecting, Selecting);
+        assert_eq!(selecting, Select);
 
-        let mut other = Deleting;
-        other = other.toggle_creating();
-        assert_ne!(other, Creating);
+        let mut other = Delete;
+        other = other.toggle_create();
+        assert_ne!(other, Create);
     }
 
     #[test]
     fn toggle_deleting() {
         let selecting = Mode::default();
-        let deleting = selecting.toggle_deleting();
-        assert_eq!(deleting, Deleting);
+        let deleting = selecting.toggle_delete();
+        assert_eq!(deleting, Delete);
 
         let selecting = Mode::default();
-        assert_eq!(selecting, Selecting);
+        assert_eq!(selecting, Select);
 
-        let mut other = Creating;
-        other = other.toggle_deleting();
-        assert_ne!(other, Deleting);
+        let mut other = Create;
+        other = other.toggle_delete();
+        assert_ne!(other, Delete);
     }
 
     #[test]
     fn toggle_renaming() {
         let selecting = Mode::default();
-        let renaming = selecting.toggle_renaming();
-        assert_eq!(renaming, Renaming);
+        let renaming = selecting.toggle_rename();
+        assert_eq!(renaming, Rename);
 
         let selecting = Mode::default();
-        assert_eq!(selecting, Selecting);
+        assert_eq!(selecting, Select);
 
-        let mut other = Creating;
-        other = other.toggle_renaming();
-        assert_ne!(other, Renaming);
+        let mut other = Create;
+        other = other.toggle_rename();
+        assert_ne!(other, Rename);
     }
 
     #[test]
     fn exit() {
         let (mut selecting, mut creating, mut renaming, mut deleting) =
-            (Selecting, Creating, Renaming, Deleting);
+            (Select, Create, Rename, Delete);
         selecting = selecting.exit();
         creating = creating.exit();
         renaming = renaming.exit();
         deleting = deleting.exit();
 
-        assert_eq!(selecting, Exiting);
-        assert_ne!(creating, Exiting);
-        assert_ne!(renaming, Exiting);
-        assert_ne!(deleting, Exiting);
+        assert_eq!(selecting, Exit);
+        assert_ne!(creating, Exit);
+        assert_ne!(renaming, Exit);
+        assert_ne!(deleting, Exit);
     }
 }

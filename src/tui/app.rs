@@ -1,5 +1,6 @@
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use std::{
+    collections::HashMap,
     io,
     sync::{Arc, Mutex},
     thread::spawn,
@@ -31,6 +32,8 @@ pub struct App {
     // the App will handle the fetching of the data from tmux and persisting it
     pub session_list: StatefulList<Session>,
     pub window_list: StatefulList<Window>,
+    sessions: Arc<Mutex<HashMap<String, Session>>>,
+    windows: Arc<Mutex<HashMap<String, Window>>>,
     pub section: Section,
     pub mode: Mode,
     pub input: InputState,
@@ -237,20 +240,20 @@ impl App {
 
     fn cancel_input(&mut self) {
         match self.mode {
-            Mode::Creating => self.toggle_is_adding(),
-            Mode::Renaming => self.toggle_is_renaming(),
+            Mode::Create => self.toggle_is_adding(),
+            Mode::Rename => self.toggle_is_renaming(),
             _ => {}
         }
         self.input.reset();
     }
 
     fn toggle_is_adding(&mut self) {
-        self.mode = self.mode.toggle_creating();
+        self.mode = self.mode.toggle_create();
         self.input = InputState::default();
     }
 
     fn toggle_is_killing(&mut self) {
-        self.mode = self.mode.toggle_deleting();
+        self.mode = self.mode.toggle_delete();
     }
 
     fn go_to_section(&mut self, section: Section) {
