@@ -1,14 +1,15 @@
 use ratatui::{
     layout::Rect,
     style::{Style, Stylize},
-    text::{Line, Text},
+    text::{Line, Span, Text},
     widgets::{block::Title, Block, BorderType, List, Paragraph},
     Frame,
 };
 use ratatui_macros::{horizontal, vertical};
 
+use crate::tui::mode::Section;
+
 use super::{app::App, mode::Mode};
-use crate::tui::app::Section;
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let [body, footer_area] = vertical![*=1, ==3].areas(frame.area());
@@ -23,48 +24,64 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     use Mode::*;
     use Section::*;
 
-    let active_item = match app.section {
-        Sessions => app.session_list.get_active_item().name,
-        Windows => app.window_list.get_active_item().name,
+    let active_item: Option<String> = match app.mode {
+        Select(Sessions) | Delete(Sessions) | Rename(Sessions, _) => {
+            Some(app.session_list.get_active_item().name)
+        }
+        Select(Windows) | Delete(Windows) | Rename(Windows, _) => {
+            Some(app.window_list.get_active_item().name)
+        }
+        _ => None,
     };
-    let active_item = active_item.as_str().bold();
+    let active_item = active_item.map(|name| Span::from(name).bold());
 
-    let title = match (&app.mode, &app.section) {
-        (Select, Sessions) => vec![" Session: ".into(), active_item.green(), " ".into()],
-        (Select, Windows) => vec![" Window: ".into(), active_item.green(), " ".into()],
-
-        (Create, Sessions) => vec![" Enter new session name ".yellow()],
-        (Create, Windows) => vec![" Enter new window name ".yellow()],
-
-        (Delete, Sessions) => vec![" Window: ".into(), active_item.red(), " ".into()],
-        (Delete, Windows) => vec![" Window: ".into(), active_item.red(), " ".into()],
-
-        (Rename, Sessions) => vec![
-            " Enter new name for session ".into(),
-            active_item.magenta(),
+    let title = match &app.mode {
+        Select(Sessions) => vec![
+            " Session: ".into(),
+            active_item.expect("should have a selected item").green(),
             " ".into(),
         ],
-        (Rename, Windows) => vec![
+        Select(Windows) => vec![
+            " Window: ".into(),
+            active_item.expect("should have a selected item").green(),
+            " ".into(),
+        ],
+
+        Create(Sessions, _) => vec![" Enter new session name ".yellow()],
+        Create(Windows, _) => vec![" Enter new window name ".yellow()],
+
+        Delete(Sessions) => vec![
+            " Window: ".into(),
+            active_item.expect("should have a selected item").red(),
+            " ".into(),
+        ],
+        Delete(Windows) => vec![
+            " Window: ".into(),
+            active_item.expect("should have a selected item").red(),
+            " ".into(),
+        ],
+
+        Rename(Sessions, _) => vec![
+            " Enter new name for session ".into(),
+            active_item.expect("should have a selected item").magenta(),
+            " ".into(),
+        ],
+        Rename(Windows, _) => vec![
             " Enter new name for window ".into(),
-            active_item.magenta(),
+            active_item.expect("should have a selected item").magenta(),
             " ".into(),
         ],
         _ => vec!["".into()],
     };
     let title = Title::from(Line::from(title));
 
-    let text = match (&app.mode, &app.section) {
-        (Select, Sessions) => vec!["selecting".into()],
-        (Select, Windows) => vec!["selecting".into()],
+    let text = match &app.mode {
+        Select(_) => vec!["selecting".into()],
 
-        (Delete, Sessions) => {
-            vec![" Press y to delete session or any other key to cancel ".red()]
-        }
-        (Delete, Windows) => {
-            vec![" Press y to delete window or any other key to cancel ".red()]
-        }
+        Delete(Sessions) => vec![" Press y to delete session or any other key to cancel ".red()],
+        Delete(Windows) => vec![" Press y to delete window or any other key to cancel ".red()],
 
-        (Rename | Create, _) => vec![app.input.content.as_str().into()],
+        Rename(_, input) | Create(_, input) => vec![input.content.as_str().into()],
         _ => vec!["".into()],
     };
     let text = Text::from(Line::from(text));
@@ -73,8 +90,8 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         .border_type(BorderType::Thick)
         .title(title);
     let block = match app.mode {
-        Delete => block.border_style(Style::default().red()),
-        Create => block.border_style(Style::default().green()),
+        Delete(_) => block.border_style(Style::default().red()),
+        Create(..) => block.border_style(Style::default().green()),
         _ => block,
     };
 

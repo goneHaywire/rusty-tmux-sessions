@@ -1,17 +1,25 @@
 use ratatui::crossterm::event::KeyCode;
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct InputState {
     pub content: String,
     index: usize,
 }
 
 impl InputState {
-    pub fn new(content: &str) -> Self {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_content(content: &str) -> Self {
         Self {
-            content: content.into(),
             index: Default::default(),
+            content: content.into()
         }
+    }
+
+    pub fn content(&mut self, content: &str) {
+        self.content = content.into();
     }
 
     pub fn reset(&mut self) {

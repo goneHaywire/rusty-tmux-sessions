@@ -1,5 +1,26 @@
-pub enum Actions {
+use ratatui::crossterm::event::KeyCode;
+
+use super::{mode::Section, tmux_list::Selection};
+
+pub enum Actions<'a> {
     Tick,
-    CreateSession,
-    CreateWindow,
+    Init,
+    Quit,
+    LoadSessions,
+    LoadWindows,
+    CreateSession(&'a str),
+    CreateWindow(&'a str),
+    SelectSession(Selection),
+    SelectWindow(Selection),
+    KillSession,
+    KillWindow,
+    RenameSession(&'a str),
+    RenameWindow(&'a str),
+    ToggleRename,
+    ToggleCreate,
+    ToggleDelete,
+    ToggleHelp,
+    ChangeSection(Section),
+    CancelInput,
+    InputKey(KeyCode)
 }

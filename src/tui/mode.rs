@@ -1,56 +1,110 @@
-#[derive(Default, PartialEq, Clone, Copy, Debug)]
-pub enum Mode {
+use super::input::InputState;
+
+#[derive(PartialEq, Default, Clone, Copy, Debug)]
+pub enum Section {
     #[default]
-    Select,
-    Create,
-    Delete,
-    Rename,
+    Sessions,
+    Windows,
+}
+
+#[derive(PartialEq, Clone, Debug)]
+pub enum Mode {
+    Select(Section),
+    Create(Section, InputState),
+    Delete(Section),
+    Rename(Section, InputState),
     Help,
     Exit,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ToggleResult {
+    Toggled(Mode),
+    NotToggled(Mode),
+}
+
+impl ToggleResult {
+    pub fn unwrap(self) -> Mode {
+        match self {
+            Self::Toggled(mode) => mode,
+            Self::NotToggled(mode) => mode,
+        }
+    }
+
+    pub fn was_toggled(&self) -> bool {
+        match self {
+            Self::Toggled(_) => true,
+            Self::NotToggled(_) => false,
+        }
+    }
+}
+
+use ToggleResult::*;
+
+impl Default for Mode {
+    fn default() -> Self {
+        Self::Select(Section::default())
+    }
+}
+
 impl Mode {
-    pub fn toggle_create(self) -> Self {
+    pub fn go_to_section(&self, section: Section) -> Self {
         match self {
-            Self::Create => Self::Select,
-            Self::Select => Self::Create,
-            v => v,
+            Self::Select(_) => Self::Select(section),
+            m => m.clone(),
         }
     }
 
-    pub fn toggle_delete(self) -> Self {
+    pub fn toggle_create(&self) -> ToggleResult {
         match self {
-            Self::Delete => Self::Select,
-            Self::Select => Self::Delete,
-            v => v,
+            Self::Create(s, _) => Toggled(Self::Select(*s)),
+            Self::Select(s) => Toggled(Self::Create(*s, InputState::default())),
+            v => NotToggled(v.clone()),
         }
     }
 
-    pub fn toggle_rename(self) -> Self {
+    pub fn toggle_delete(&self) -> ToggleResult {
         match self {
-            Self::Rename => Self::Select,
-            Self::Select => Self::Rename,
-            v => v,
+            Self::Delete(s) => Toggled(Self::Select(*s)),
+            Self::Select(s) => Toggled(Self::Delete(*s)),
+            v => NotToggled(v.clone()),
         }
     }
 
-    pub fn exit(self) -> Self {
+    pub fn toggle_rename(&self) -> ToggleResult {
         match self {
-            Self::Select => Self::Exit,
-            v => v,
+            Self::Rename(s, _) => Toggled(Self::Select(*s)),
+            Self::Select(s) => Toggled(Self::Rename(*s, InputState::default())),
+            v => NotToggled(v.clone()),
+        }
+    }
+
+    pub fn exit(&self) -> ToggleResult {
+        match self {
+            Self::Select(_) => Toggled(Self::Exit),
+            v => NotToggled(v.clone()),
         }
     }
 
     pub fn is_killing(&self) -> bool {
-        *self == Self::Delete
+        match self {
+            Self::Delete(_) => true,
+            _ => false,
+        }
     }
 
     pub fn is_renaming(&self) -> bool {
-        *self == Self::Rename
+        match self {
+            Self::Rename(_, _) => true,
+            _ => false,
+        }
     }
 
     pub fn is_adding(&self) -> bool {
-        *self == Self::Create
+        match self {
+            Self::Create(_, _) => true,
+            _ => false,
+        }
     }
 
     pub fn should_exit(&self) -> bool {
@@ -60,63 +114,63 @@ impl Mode {
 
 #[cfg(test)]
 mod test {
+    use crate::tui::mode::{Section, ToggleResult};
+
     use super::Mode;
     use super::Mode::*;
 
     #[test]
     fn toggle_creating() {
         let selecting = Mode::default();
-        let creating = selecting.toggle_create();
-        assert_eq!(creating, Create);
+        let toggled = selecting.toggle_create();
+        assert!(toggled.was_toggled());
 
         let selecting = Mode::default();
-        assert_eq!(selecting, Select);
+        assert_eq!(selecting, Select(Section::Sessions));
 
-        let mut other = Delete;
-        other = other.toggle_create();
-        assert_ne!(other, Create);
+        let other = Delete(Section::Sessions);
+        let not_toggled = other.toggle_create();
+        assert!(!not_toggled.was_toggled());
     }
 
     #[test]
     fn toggle_deleting() {
         let selecting = Mode::default();
-        let deleting = selecting.toggle_delete();
-        assert_eq!(deleting, Delete);
+        let toggled = selecting.toggle_delete();
+        assert!(toggled.was_toggled());
 
-        let selecting = Mode::default();
-        assert_eq!(selecting, Select);
-
-        let mut other = Create;
-        other = other.toggle_delete();
-        assert_ne!(other, Delete);
+        let create = Mode::default().toggle_create().unwrap();
+        let not_toggled = create.toggle_delete();
+        assert!(!not_toggled.was_toggled());
     }
 
     #[test]
     fn toggle_renaming() {
         let selecting = Mode::default();
-        let renaming = selecting.toggle_rename();
-        assert_eq!(renaming, Rename);
+        let toggled = selecting.toggle_rename();
+        assert!(toggled.was_toggled());
 
-        let selecting = Mode::default();
-        assert_eq!(selecting, Select);
-
-        let mut other = Create;
-        other = other.toggle_rename();
-        assert_ne!(other, Rename);
+        let other = Delete(Section::Sessions);
+        let not_toggled = other.toggle_rename();
+        assert!(!not_toggled.was_toggled());
     }
 
     #[test]
     fn exit() {
-        let (mut selecting, mut creating, mut renaming, mut deleting) =
-            (Select, Create, Rename, Delete);
-        selecting = selecting.exit();
-        creating = creating.exit();
-        renaming = renaming.exit();
-        deleting = deleting.exit();
+        let (selecting, creating, renaming, deleting) = (
+            Mode::default(),
+            Mode::default().toggle_create().unwrap(),
+            Mode::default().toggle_rename().unwrap(),
+            Mode::default().toggle_delete().unwrap(),
+        );
+        let selecting = selecting.exit();
+        let creating = creating.exit();
+        let renaming = renaming.exit();
+        let deleting = deleting.exit();
 
-        assert_eq!(selecting, Exit);
-        assert_ne!(creating, Exit);
-        assert_ne!(renaming, Exit);
-        assert_ne!(deleting, Exit);
+        assert!(selecting.was_toggled());
+        assert!(!creating.was_toggled());
+        assert!(!renaming.was_toggled());
+        assert!(!deleting.was_toggled());
     }
 }

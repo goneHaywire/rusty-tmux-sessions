@@ -6,5 +6,4 @@ pub mod widgets;
 pub mod view;
 pub mod tui;
 pub mod event;
-pub mod handler;
 pub mod action;

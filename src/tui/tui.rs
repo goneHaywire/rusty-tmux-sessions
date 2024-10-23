@@ -1,24 +1,25 @@
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     crossterm::{
-        self, event::DisableMouseCapture, terminal::{self, EnterAlternateScreen, LeaveAlternateScreen}
+        self,
+        event::DisableMouseCapture,
+        terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
     },
     Terminal,
 };
-use std::io;
+use std::io::{self, Stdout};
 
 use super::{app::App, event::EventHandler, view};
 
-pub struct TUI<B: Backend> {
-    pub terminal: Terminal<B>,
+pub type Tui = Terminal<CrosstermBackend<Stdout>>;
+
+pub struct TUI {
+    pub terminal: Tui,
     pub events: EventHandler,
 }
 
-impl<B> TUI<B>
-where
-    B: Backend,
-{
-    pub fn new(terminal: Terminal<B>, events: EventHandler) -> Self {
+impl TUI {
+    pub fn new(terminal: Tui, events: EventHandler) -> Self {
         Self { terminal, events }
     }
 

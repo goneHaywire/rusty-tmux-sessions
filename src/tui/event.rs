@@ -7,7 +7,7 @@ use std::{
 use ratatui::crossterm::event::{self, KeyEvent};
 
 pub struct EventHandler {
-    tx: Sender<Events>,
+    pub tx: Sender<Events>,
     rx: Receiver<Events>,
 }
 
@@ -17,6 +17,7 @@ impl EventHandler {
         // TODO: here will be some thread that will get the crossterm events every tick_rate (1/4secs)
         // and will send them through the events channel
         let (tx, rx) = mpsc::channel();
+        tx.send(Events::Init).expect("init event could not be sent");
         let sender = tx.clone();
 
         spawn(move || loop {
@@ -46,4 +47,6 @@ pub enum Events {
     Tick,
     Key(KeyEvent),
     Resize(u16, u16),
+    Init,
+    Quit,
 }
