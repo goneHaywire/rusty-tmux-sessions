@@ -114,10 +114,9 @@ impl Mode {
 
 #[cfg(test)]
 mod test {
-    use crate::tui::mode::{Section, ToggleResult};
+    use crate::tui::mode::Section;
 
-    use super::Mode;
-    use super::Mode::*;
+    use super::Mode::{self, *};
 
     #[test]
     fn toggle_creating() {

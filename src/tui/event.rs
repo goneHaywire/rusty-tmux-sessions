@@ -14,8 +14,6 @@ pub struct EventHandler {
 impl EventHandler {
     pub fn new(tick_rate: u64) -> Self {
         let tick_rate = Duration::from_millis(tick_rate);
-        // TODO: here will be some thread that will get the crossterm events every tick_rate (1/4secs)
-        // and will send them through the events channel
         let (tx, rx) = mpsc::channel();
         tx.send(Events::Init).expect("init event could not be sent");
         let sender = tx.clone();
@@ -30,7 +28,6 @@ impl EventHandler {
                     _ => Events::Tick,
                 })
                 .unwrap_or(Events::Tick);
-            println!("sending event {:?}", &event);
             sender.send(event).unwrap();
         });
 
@@ -42,8 +39,9 @@ impl EventHandler {
     }
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, Default)]
 pub enum Events {
+    #[default]
     Tick,
     Key(KeyEvent),
     Resize(u16, u16),

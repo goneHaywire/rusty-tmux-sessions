@@ -2,8 +2,6 @@ use std::ops::Index;
 
 use ratatui::widgets::ListState;
 
-use crate::tmux::tmux::TmuxEntity;
-
 pub enum Selection {
     Next,
     Prev,
@@ -16,16 +14,13 @@ pub enum Selection {
 /// * `items`: Vector of Sessions or Windows
 /// * `state`: ListState
 /// * `show_hidden`: Whether to show hidden items or not
-pub struct StatefulList<T: TmuxEntity> {
-    pub items: Vec<T>,
+pub struct StatefulList {
+    pub items: Vec<String>,
     pub state: ListState,
     show_hidden: bool,
 }
 
-impl<T> Default for StatefulList<T>
-where
-    T: TmuxEntity,
-{
+impl Default for StatefulList {
     fn default() -> Self {
         Self {
             items: Default::default(),
@@ -35,11 +30,8 @@ where
     }
 }
 
-impl<T> StatefulList<T>
-where
-    T: TmuxEntity,
-{
-    pub fn with_items(mut self, items: Vec<T>) -> Self {
+impl StatefulList {
+    pub fn with_items(mut self, items: Vec<String>) -> Self {
         self.items = items;
         self
     }
@@ -49,12 +41,13 @@ where
         self.show_hidden = !self.show_hidden;
     }
 
-    pub fn get_active_item(&self) -> T {
+    pub fn get_active_item(&self) -> String {
         let active_idx = self
             .state
             .selected()
             .expect("there should always be a selection");
-        self.items.index(active_idx).clone()
+        let index = self.items.index(active_idx);
+        index.clone()
     }
 
     /// selection function that handles 4 different cases

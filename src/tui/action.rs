@@ -21,6 +21,9 @@ pub enum Actions<'a> {
     ToggleDelete,
     ToggleHelp,
     ChangeSection(Section),
-    CancelInput,
-    InputKey(KeyCode)
+    ClearInput,
+    InputKey(KeyCode),
+    ToggleHidden,
+    AttachSession,
+    AttachWindow,
 }
