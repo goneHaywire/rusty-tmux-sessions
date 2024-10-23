@@ -1,5 +1,9 @@
 pub mod app;
-pub mod app_state;
+pub mod mode;
 pub mod input;
-pub mod main;
 pub mod tmux_list;
+pub mod widgets;
+pub mod view;
+pub mod tui;
+pub mod event;
+pub mod action;

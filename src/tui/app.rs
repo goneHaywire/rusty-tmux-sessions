@@ -1,375 +1,444 @@
-use ratatui::{
-    buffer::Buffer,
-    crossterm::event::{self, Event, KeyCode, KeyEventKind},
-    layout::Rect,
-    style::{Style, Stylize},
-    text::{Line, Text},
-    widgets::{block::Title, Block, BorderType, List, Paragraph, StatefulWidget, Widget},
-    Frame,
-};
-use ratatui_macros::{horizontal, vertical};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::{
+    collections::HashMap,
     io,
     sync::{Arc, Mutex},
     thread::spawn,
 };
 
-use crate::tmux::{
-    sessions::{Session, SessionService},
-    windows::{Window, WindowService},
+use crate::{
+    tmux::{
+        sessions::{Session, SessionService},
+        windows::{Window, WindowService},
+    },
+    tui::{action::Actions, tmux_list::Selection, view},
 };
 
 use super::{
-    app_state::AppState,
-    input::InputState,
-    main::Tui,
-    tmux_list::{Selection, StatefulList},
+    event::Events,
+    mode::{Mode, Section, ToggleResult::*},
+    tmux_list::StatefulList,
+    tui::TUI,
 };
-
-#[derive(PartialEq, Default)]
-enum Section {
-    #[default]
-    Sessions,
-    Windows,
-}
 
 #[derive(Default)]
 pub struct App {
-    session_list: StatefulList<Session>,
-    window_list: StatefulList<Window>,
-    section: Section,
-    state: AppState,
-    input: InputState,
-}
-
-impl Widget for &mut App {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut Buffer) {
-        let [body, footer_area] = vertical![*=1, ==3].areas(area);
-        let [session_area, window_area] = horizontal![==50%, ==50%].areas(body);
-
-        self.render_session_list(session_area, buf);
-        self.render_window_list(window_area, buf);
-        self.render_footer(footer_area, buf);
-    }
+    // TODO: add the structs of other widgets
+    // since the App controls state, it will modify the state of each widget
+    // for ex. the scrolling of the lists will be handled by the structs of each list widget
+    // the App will handle the fetching of the data from tmux and persisting it
+    pub session_list: StatefulList,
+    pub window_list: StatefulList,
+    sessions: Arc<Mutex<HashMap<String, Session>>>,
+    windows: Arc<Mutex<HashMap<String, Vec<Window>>>>,
+    pub mode: Mode,
 }
 
 impl App {
-    pub fn run(&mut self, terminal: &mut Tui) -> io::Result<()> {
-        self.load_sessions_list();
-        self.load_window_list();
-
-        while !self.state.should_exit() {
-            terminal.draw(|frame| self.render_frame(frame))?;
-            self.handle_events()?;
-        }
-        Ok(())
-    }
-
-    fn handle_events(&mut self) -> io::Result<()> {
-        use KeyCode::Char;
-        use Section::*;
-        use Selection::*;
-
-        match event::read()? {
-            Event::Key(key_press) if key_press.kind == KeyEventKind::Press => {
-                let keycode = key_press.code;
-
-                match (keycode, &self.section) {
-                    // renaming handlers
-                    (Char(' '), Sessions) if self.state.is_renaming() => self.rename_session(),
-                    (Char(' '), Windows) if self.state.is_renaming() => self.rename_window(),
-
-                    // creating handlers
-                    (Char(' '), Sessions) if self.state.is_adding() => self.create_session(),
-                    (Char(' '), Windows) if self.state.is_adding() => self.create_window(),
-
-                    // renaming & creating
-                    (KeyCode::Esc, _) if self.state.is_renaming() || self.state.is_adding() => {
-                        self.cancel_input()
-                    }
-                    (key, _) if self.state.is_renaming() || self.state.is_adding() => {
-                        self.input.handle_key(key)
-                    }
-
-                    // deletion handlers
-                    (Char('d'), _) => self.toggle_is_killing(),
-                    (Char('y'), Sessions) if self.state.is_killing() => self.kill_session(),
-                    (Char('y'), Windows) if self.state.is_killing() => self.kill_window(),
-                    _ if self.state.is_killing() => self.toggle_is_killing(),
-
-                    // selection handlers for sessions
-                    (Char('j'), Sessions) => {
-                        self.session_list.select(Next);
-                        self.load_window_list();
-                    }
-                    (Char('k'), Sessions) => {
-                        self.session_list.select(Prev);
-                        self.load_window_list();
-                    }
-                    (Char('g'), Sessions) => {
-                        self.session_list.select(First);
-                        self.load_window_list();
-                    }
-                    (Char('G'), Sessions) => {
-                        self.session_list.select(Last);
-                        self.load_window_list();
-                    }
-                    (Char('l'), Sessions) => self.go_to_section(Windows),
-                    (Char('H'), Sessions) => self.session_list.toggle_hidden(),
-                    (Char(' ') | KeyCode::Enter, Sessions) => self.attach_session(),
-
-                    // selection handlers for windows
-                    (Char('j'), Windows) => self.window_list.select(Next),
-                    (Char('k'), Windows) => self.window_list.select(Prev),
-                    (Char('g'), Windows) => self.window_list.select(First),
-                    (Char('G'), Windows) => self.window_list.select(Last),
-                    (Char('h'), Windows) => self.go_to_section(Sessions),
-                    (Char(' ') | KeyCode::Enter, Windows) => self.attach_window(),
-
-                    (Char('a'), _) => self.toggle_is_adding(),
-                    (Char('c'), _) => self.toggle_is_renaming(),
-
-                    (Char('q') | KeyCode::Esc, _) => self.exit(),
-                    _ => (),
-                }
-            }
-            _ => {}
-        }
-
-        Ok(())
-    }
-
-    fn render_session_list(&mut self, area: Rect, buf: &mut Buffer) {
-        let block = Block::bordered()
-            .border_type(BorderType::Thick)
-            .title(" Sessions ".bold());
-
-        let list: List = self
-            .session_list
-            .items
-            .iter()
-            .map(|s| &s.name as &str)
-            .collect();
-        let list = list.highlight_symbol("> ").block(block);
-
-        StatefulWidget::render(list, area, buf, &mut self.session_list.state);
-    }
-
-    fn render_window_list(&mut self, area: Rect, buf: &mut Buffer) {
-        let block = Block::bordered()
-            .border_type(BorderType::Thick)
-            .title(" Windows ".bold());
-
-        let list: List = self
-            .window_list
-            .items
-            .iter()
-            .map(|w| &w.name as &str)
-            .collect();
-        let list = list.highlight_symbol("> ").block(block);
-
-        StatefulWidget::render(list, area, buf, &mut self.window_list.state);
-    }
-
-    fn render_footer(&self, footer_area: Rect, buf: &mut Buffer) {
-        use AppState::*;
-        use Section::*;
-
-        let active_item = match self.section {
-            Sessions => self.session_list.get_active_item().name,
-            Windows => self.window_list.get_active_item().name,
-        };
-        let active_item = active_item.as_str().bold();
-
-        let title = match (&self.state, &self.section) {
-            (Selecting, Sessions) => vec![" Session: ".into(), active_item.green(), " ".into()],
-            (Selecting, Windows) => vec![" Window: ".into(), active_item.green(), " ".into()],
-
-            (Creating, Sessions) => vec![" Enter new session name ".yellow()],
-            (Creating, Windows) => vec![" Enter new window name ".yellow()],
-
-            (Deleting, Sessions) => vec![" Window: ".into(), active_item.red(), " ".into()],
-            (Deleting, Windows) => vec![" Window: ".into(), active_item.red(), " ".into()],
-
-            (Renaming, Sessions) => vec![
-                " Enter new name for session ".into(),
-                active_item.magenta(),
-                " ".into(),
-            ],
-            (Renaming, Windows) => vec![
-                " Enter new name for window ".into(),
-                active_item.magenta(),
-                " ".into(),
-            ],
-            _ => vec!["".into()],
-        };
-        let title = Title::from(Line::from(title));
-
-        let text = match (&self.state, &self.section) {
-            (Selecting, Sessions) => vec!["selecting".into()],
-            (Selecting, Windows) => vec!["selecting".into()],
-
-            (Deleting, Sessions) => {
-                vec![" Press y to delete session or any other key to cancel ".red()]
-            }
-            (Deleting, Windows) => {
-                vec![" Press y to delete window or any other key to cancel ".red()]
-            }
-
-            (Renaming | Creating, _) => vec![self.input.content.as_str().into()],
-            _ => vec!["".into()],
-        };
-        let text = Text::from(Line::from(text));
-
-        let block = Block::bordered()
-            .border_type(BorderType::Thick)
-            .title(title);
-        let block = match self.state {
-            Deleting => block.border_style(Style::default().red()),
-            Creating => block.border_style(Style::default().green()),
-            _ => block,
-        };
-
-        Paragraph::new(text).block(block).render(footer_area, buf);
-    }
-
     fn load_sessions_list(&mut self) {
-        let sessions = Arc::new(Mutex::new(vec![]));
-        let clone = sessions.clone();
+        let clone = self.sessions.clone();
 
         spawn(move || {
             let mut sessions = clone.lock().unwrap();
-            *sessions = SessionService::get_all().unwrap();
+            for sesh in SessionService::get_all().unwrap() {
+                sessions.insert(sesh.name.clone(), sesh);
+            }
         })
         .join()
         .expect("can't join from sessions thread");
 
-        let sessions = Arc::try_unwrap(sessions).unwrap().into_inner().unwrap();
+        let sessions = self
+            .sessions
+            .clone()
+            .lock()
+            .unwrap()
+            .values()
+            .map(|s| s.name.clone())
+            .collect();
         self.session_list = StatefulList::default().with_items(sessions);
     }
 
     fn load_window_list(&mut self) {
-        let selected_session = self.session_list.get_active_item().name;
-        let windows = Arc::new(Mutex::new(vec![]));
-        let clone = windows.clone();
+        let selected_session = self.session_list.get_active_item();
+        let clone = self.windows.clone();
 
         spawn(move || {
             let mut windows = clone.lock().unwrap();
-            *windows = WindowService::get_all(&selected_session).unwrap();
+            windows.insert(
+                selected_session.clone(),
+                WindowService::get_all(&selected_session).unwrap(),
+            )
         })
         .join()
         .expect("can't join from windows thread");
 
-        let windows = Arc::try_unwrap(windows).unwrap().into_inner().unwrap();
+        let mutex = &self.windows.clone();
+        let windows = mutex.lock().unwrap();
+        let windows: Vec<String> = windows
+            .get(&self.session_list.get_active_item())
+            .unwrap()
+            .clone()
+            .into_iter()
+            .map(|w| w.name)
+            .collect();
+
         self.window_list = StatefulList::default().with_items(windows);
     }
 
-    fn render_frame(&mut self, frame: &mut Frame) {
-        frame.render_widget(self, frame.area());
-    }
-
     fn toggle_is_renaming(&mut self) {
-        self.state = self.state.toggle_renaming();
-        let active_name = match &self.section {
-            Section::Sessions => self.session_list.get_active_item().name,
-            Section::Windows => self.window_list.get_active_item().name,
-        };
-        self.input = InputState::new(&active_name);
+        if let Toggled(mut mode) = self.mode.toggle_rename() {
+            self.mode = match mode {
+                Mode::Rename(Section::Sessions, ref mut _input) => {
+                    _input.set_content(&self.session_list.get_active_item());
+                    mode
+                }
+                Mode::Rename(Section::Windows, ref mut _input) => {
+                    _input.set_content(&self.session_list.get_active_item());
+                    mode
+                }
+                _ => mode,
+            };
+        }
     }
 
     fn attach_session(&mut self) {
-        let current_session = self.session_list.get_active_item().name;
+        let current_session = self.session_list.get_active_item();
         SessionService::attach(&current_session);
-        self.state = self.state.exit();
+        self.mode = self.mode.exit().unwrap();
     }
 
     fn attach_window(&mut self) {
-        let session = self.session_list.get_active_item().name;
-        let window = self.window_list.get_active_item().name;
+        let session = self.session_list.get_active_item();
+        let window = self.window_list.get_active_item();
 
         WindowService::attach(&session, &window);
-        self.state = self.state.exit();
+        self.mode = self.mode.exit().unwrap();
     }
 
-    fn rename_session(&mut self) {
-        let new_name = self.input.submit();
-        let old_name = self.session_list.get_active_item().name;
+    fn rename_session(&mut self, new_name: &str) {
+        let old_name = self.session_list.get_active_item();
 
-        SessionService::rename(&old_name, &new_name);
+        SessionService::rename(&old_name, new_name);
         self.load_sessions_list();
         self.toggle_is_renaming();
     }
 
-    fn rename_window(&mut self) {
-        let session_name = self.session_list.get_active_item().name;
-        let new_name = self.input.submit();
-        let old_name = self.window_list.get_active_item().name;
+    fn rename_window(&mut self, new_name: &str) {
+        let session_name = self.session_list.get_active_item();
+        let old_name = self.window_list.get_active_item();
 
-        WindowService::rename(&session_name, &old_name, &new_name);
+        WindowService::rename(&session_name, &old_name, new_name);
         self.load_window_list();
         self.toggle_is_renaming();
     }
 
-    fn create_window(&mut self) {
-        let name = self.input.submit();
-        let curr_window_name = self.window_list.get_active_item().name.clone();
-        let session = self.session_list.get_active_item().name;
+    fn create_window(&mut self, name: &str) {
+        let curr_window_name = self.window_list.get_active_item().clone();
+        let session = self.session_list.get_active_item();
         self.toggle_is_adding();
 
-        WindowService::create(&session, &curr_window_name, &name);
+        WindowService::create(&session, &curr_window_name, name);
         self.load_window_list();
     }
 
-    fn create_session(&mut self) {
-        let name = self.input.submit();
+    fn create_session(&mut self, name: &str) {
         self.toggle_is_adding();
 
-        SessionService::create(&name);
+        SessionService::create(name);
         self.load_sessions_list();
     }
 
     fn kill_session(&mut self) {
-        let session = self.session_list.get_active_item().name;
+        let session = self.session_list.get_active_item();
         SessionService::kill(&session);
         self.toggle_is_killing();
         self.load_sessions_list();
     }
 
     fn kill_window(&mut self) {
-        let session = self.session_list.get_active_item().name;
-        let window = self.window_list.get_active_item().name;
+        let session = self.session_list.get_active_item();
+        let window = self.window_list.get_active_item();
         WindowService::kill(&session, &window);
         self.toggle_is_killing();
         if self.window_list.items.len() == 1 {
             self.load_sessions_list();
-            self.go_to_section(Section::Sessions);
+            self.mode = self.mode.go_to_section(Section::Sessions);
         }
         self.load_window_list();
     }
 
+    fn input_key(&mut self, key: KeyCode) {
+        match &mut self.mode {
+            Mode::Create(_, ref mut input) => input.handle_key(key),
+            Mode::Rename(_, ref mut input) => input.handle_key(key),
+            _ => {}
+        };
+    }
+
     fn cancel_input(&mut self) {
-        match self.state {
-            AppState::Creating => self.toggle_is_adding(),
-            AppState::Renaming => self.toggle_is_renaming(),
+        match &mut self.mode {
+            Mode::Create(_, ref mut input) => input.clear(),
+            Mode::Rename(_, ref mut input) => input.clear(),
             _ => {}
         }
-        self.input.reset();
     }
 
     fn toggle_is_adding(&mut self) {
-        self.state = self.state.toggle_creating();
-        self.input = InputState::default();
+        self.mode = self.mode.toggle_create().unwrap();
     }
 
     fn toggle_is_killing(&mut self) {
-        self.state = self.state.toggle_deleting();
-    }
-
-    fn go_to_section(&mut self, section: Section) {
-        self.section = section;
+        self.mode = self.mode.toggle_delete().unwrap();
     }
 
     fn exit(&mut self) {
-        self.state = self.state.exit();
+        self.mode = self.mode.exit().unwrap();
+    }
+}
+
+impl App {
+    pub fn run(&mut self, tui: &mut TUI) -> io::Result<()> {
+        while !self.mode.should_exit() {
+            let state = self.mode.clone();
+            let action = match tui.events.next() {
+                Events::Key(k) => App::handle_key_events(&state, k),
+                Events::Resize(_, _) | Events::Tick => Actions::Tick,
+                Events::Init => Actions::Init,
+                Events::Quit => Actions::Quit,
+            };
+            // TODO: in the future you can create a dedicated action channel to dispatch actions directly instead of only waiting for events to trigger them
+            self.handle_action(action);
+
+            // draw the screen
+            // TODO: decide where to interface with the view
+            tui.terminal.draw(|frame| view::render(frame, self))?;
+        }
+        Ok(())
+    }
+
+    fn handle_key_events(mode: &Mode, key: KeyEvent) -> Actions {
+        use KeyCode::Char;
+        use Mode::*;
+        use Section::*;
+
+        match (key, &mode) {
+            // renaming & creating
+            (
+                KeyEvent {
+                    code: Char(' '), ..
+                },
+                Rename(Sessions, input),
+            ) => Actions::RenameSession(&input.content),
+            (
+                KeyEvent {
+                    code: Char(' '), ..
+                },
+                Rename(Windows, input),
+            ) => Actions::RenameWindow(&input.content),
+            (
+                KeyEvent {
+                    code: Char(' '), ..
+                },
+                Create(Sessions, input),
+            ) => Actions::CreateSession(&input.content),
+            (
+                KeyEvent {
+                    code: Char(' '), ..
+                },
+                Create(Windows, input),
+            ) => Actions::CreateWindow(&input.content),
+            (
+                KeyEvent {
+                    code: KeyCode::Esc, ..
+                },
+                Create(..),
+            ) => Actions::ToggleCreate,
+            (
+                KeyEvent {
+                    code: KeyCode::Esc, ..
+                },
+                Rename(..),
+            ) => Actions::ToggleRename,
+            (
+                KeyEvent {
+                    code: Char('w'),
+                    modifiers: KeyModifiers::CONTROL,
+                    ..
+                },
+                Rename(..) | Create(..),
+            ) => Actions::ClearInput,
+            (KeyEvent { code: key, .. }, Rename(..) | Create(..)) => Actions::InputKey(key),
+
+            // deletion handlers
+            (
+                KeyEvent {
+                    code: Char('d'), ..
+                },
+                _,
+            ) => Actions::ToggleDelete,
+            (
+                KeyEvent {
+                    code: Char('y'), ..
+                },
+                Delete(Sessions),
+            ) => Actions::KillSession,
+            (
+                KeyEvent {
+                    code: Char('y'), ..
+                },
+                Delete(Windows),
+            ) => Actions::KillWindow,
+            (_, Delete(_)) => Actions::ToggleDelete,
+
+            // selection handlers for sessions
+            (
+                KeyEvent {
+                    code: Char('j'), ..
+                },
+                Select(Sessions),
+            ) => Actions::SelectSession(Selection::Next),
+            (
+                KeyEvent {
+                    code: Char('k'), ..
+                },
+                Select(Sessions),
+            ) => Actions::SelectSession(Selection::Prev),
+            (
+                KeyEvent {
+                    code: Char('g'), ..
+                },
+                Select(Sessions),
+            ) => Actions::SelectSession(Selection::First),
+            (
+                KeyEvent {
+                    code: Char('G'), ..
+                },
+                Select(Sessions),
+            ) => Actions::SelectSession(Selection::Last),
+            (
+                KeyEvent {
+                    code: Char('l'), ..
+                },
+                Select(Sessions),
+            ) => Actions::ChangeSection(Windows),
+            (
+                KeyEvent {
+                    code: Char('H'), ..
+                },
+                Select(Sessions),
+            ) => Actions::ToggleHidden,
+            (
+                KeyEvent {
+                    code: Char(' '), ..
+                }
+                | KeyEvent {
+                    code: KeyCode::Enter,
+                    ..
+                },
+                Select(Sessions),
+            ) => Actions::AttachSession,
+
+            // selection handlers for windows
+            (
+                KeyEvent {
+                    code: Char('j'), ..
+                },
+                Select(Windows),
+            ) => Actions::SelectWindow(Selection::Next),
+            (
+                KeyEvent {
+                    code: Char('k'), ..
+                },
+                Select(Windows),
+            ) => Actions::SelectWindow(Selection::Prev),
+            (
+                KeyEvent {
+                    code: Char('g'), ..
+                },
+                Select(Windows),
+            ) => Actions::SelectWindow(Selection::First),
+            (
+                KeyEvent {
+                    code: Char('G'), ..
+                },
+                Select(Windows),
+            ) => Actions::SelectWindow(Selection::Last),
+            (
+                KeyEvent {
+                    code: Char('h'), ..
+                },
+                Select(Windows),
+            ) => Actions::ChangeSection(Sessions),
+            (
+                KeyEvent {
+                    code: Char(' '), ..
+                }
+                | KeyEvent {
+                    code: KeyCode::Enter,
+                    ..
+                },
+                Select(Windows),
+            ) => Actions::AttachWindow,
+
+            (
+                KeyEvent {
+                    code: Char('a'), ..
+                },
+                Select(_),
+            ) => Actions::ToggleCreate,
+            (
+                KeyEvent {
+                    code: Char('c'), ..
+                },
+                Select(_),
+            ) => Actions::ToggleRename,
+
+            (
+                KeyEvent {
+                    code: Char('q'), ..
+                }
+                | KeyEvent {
+                    code: KeyCode::Esc, ..
+                },
+                _,
+            ) => Actions::Quit,
+            _ => Actions::Tick,
+        }
+    }
+
+    fn handle_action(&mut self, action: Actions) {
+        use Actions::*;
+
+        match action {
+            Tick => {}
+            Init => {
+                self.load_sessions_list();
+                self.load_window_list();
+            }
+            Quit => self.exit(),
+            LoadSessions => self.load_sessions_list(),
+            LoadWindows => self.load_window_list(),
+            CreateSession(name) => self.create_session(name),
+            CreateWindow(name) => self.create_window(name),
+            SelectSession(selection) => {
+                self.session_list.select(selection);
+                self.load_window_list();
+            }
+            SelectWindow(selection) => self.window_list.select(selection),
+            KillSession => self.kill_session(),
+            KillWindow => self.kill_window(),
+            RenameSession(name) => self.rename_session(name),
+            RenameWindow(name) => self.rename_window(name),
+            ToggleHelp => todo!(),
+            ChangeSection(section) => self.mode = self.mode.go_to_section(section),
+            ClearInput => self.cancel_input(),
+            InputKey(key) => self.input_key(key),
+            ToggleCreate => self.toggle_is_adding(),
+            ToggleRename => self.toggle_is_renaming(),
+            ToggleDelete => self.toggle_is_killing(),
+            ToggleHidden => todo!(),
+            AttachSession => self.attach_session(),
+            AttachWindow => self.attach_window(),
+        };
     }
 }

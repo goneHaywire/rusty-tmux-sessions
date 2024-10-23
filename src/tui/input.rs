@@ -1,28 +1,27 @@
 use ratatui::crossterm::event::KeyCode;
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct InputState {
     pub content: String,
     index: usize,
 }
 
 impl InputState {
-    pub fn new(content: &str) -> Self {
-        Self {
-            content: content.into(),
-            index: Default::default(),
-        }
+    pub fn set_content(&mut self, content: &str) {
+        self.content = content.into();
     }
 
-    pub fn reset(&mut self) {
+    pub fn clear(&mut self) {
         self.index = 0;
         self.content.clear();
     }
 
-    pub fn submit(&mut self) -> String {
-        let content = self.content.clone();
-        self.reset();
-        content
+    pub fn handle_key(&mut self, key: KeyCode) {
+        match key {
+            KeyCode::Backspace => self.remove_char(),
+            KeyCode::Char(c) if c.is_ascii() => self.add_char(c),
+            _ => {}
+        };
     }
 
     fn move_cursor_left(&mut self) {
@@ -32,14 +31,6 @@ impl InputState {
     fn move_cursor_right(&mut self) {
         let new_index = self.index.saturating_add(1);
         self.index = new_index.clamp(0, self.content.chars().count());
-    }
-
-    pub fn handle_key(&mut self, key: KeyCode) {
-        match key {
-            KeyCode::Backspace => self.remove_char(),
-            KeyCode::Char(c) if c.is_ascii() => self.add_char(c),
-            _ => {}
-        };
     }
 
     fn add_char(&mut self, char: char) {
