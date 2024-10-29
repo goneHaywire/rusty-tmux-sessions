@@ -1,6 +1,10 @@
 use std::process::Command;
 
 use anyhow::{Context, Result};
+const SESSION_FORMAT: &str =
+    "#{#S,#{?session_attached,1,},#{session_last_attached},#{session_windows},#{session_created}}";
+
+const WINDOW_FORMAT: &str = "#{#W,#{?window_active,1,},#{window_activity},#{window_panes}}";
 
 fn base_cmd() -> Command {
     let cmd = "tmux";
@@ -14,23 +18,49 @@ fn error_decorator(message: &str) -> String {
 pub struct TmuxCommand {}
 
 impl TmuxCommand {
-    pub fn list_sessions() -> Result<Vec<u8>> {
-        let session_format = "#{#S,#{?session_attached,1,},#{session_last_attached},#{session_windows},#{session_created}}";
-
+    pub fn get_sessions() -> Result<Vec<u8>> {
         Ok(base_cmd()
-            .args(["list-sessions", "-F", session_format])
+            .args(["list-sessions", "-F", SESSION_FORMAT])
             .output()
             .context("list-sessions command failed")?
             .stdout)
     }
 
-    pub fn list_windows(session_name: &str) -> Result<Vec<u8>> {
-        let window_format = "#{#W,#{?window_active,1,},#{window_activity},#{window_panes}}";
-
+    pub fn get_windows(session_name: &str) -> Result<Vec<u8>> {
         Ok(base_cmd()
-            .args(["list-windows", "-t", session_name, "-F", window_format])
+            .args(["list-windows", "-t", session_name, "-F", WINDOW_FORMAT])
             .output()
             .with_context(|| format!("list-windows failed for session {}", session_name))?
+            .stdout)
+    }
+
+    pub fn get_session(name: &str) -> Result<Vec<u8>> {
+        Ok(base_cmd()
+            .args([
+                "list-sessions",
+                "-F",
+                SESSION_FORMAT,
+                "-f",
+                &format!("#{{m:{},#S}}", name),
+            ])
+            .output()
+            .context("get session command failed")?
+            .stdout)
+    }
+
+    pub fn get_window(session_name: &str, name: &str) -> Result<Vec<u8>> {
+        Ok(base_cmd()
+            .args([
+                "list-windows",
+                "-t",
+                session_name,
+                "-F",
+                WINDOW_FORMAT,
+                "-f",
+                &format!("#{{m:{},#W}}", name),
+            ])
+            .output()
+            .context("get window command failed")?
             .stdout)
     }
 
@@ -101,6 +131,7 @@ impl TmuxCommand {
             .args([
                 "new-window",
                 "-a",
+                "-d",
                 "-n",
                 name,
                 "-t",

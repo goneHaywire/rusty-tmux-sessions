@@ -1,7 +1,6 @@
 use std::{
     fmt::Debug,
     str::{self, FromStr},
-    usize,
 };
 
 use anyhow::{Context, Error, Result};
@@ -72,7 +71,7 @@ pub struct SessionService;
 
 impl SessionService {
     pub fn get_all() -> Result<Vec<Session>> {
-        let sessions = TmuxCommand::list_sessions()?;
+        let sessions = TmuxCommand::get_sessions()?;
 
         str::from_utf8(&sessions)
             .context("error parsing list-sessions output")?
@@ -82,13 +81,17 @@ impl SessionService {
             .collect()
     }
 
+    pub fn get_session(name: &str) -> Result<Session> {
+        let session = TmuxCommand::get_session(name)?;
+
+        str::from_utf8(&session)
+            .context("error parsing get session output")
+            .map(|s| s.trim())
+            .and_then(Session::from_str)
+    }
+
     pub fn create(name: &str) {
-        let _ = TmuxCommand::create_session(name);
-        //let sessions = Self::get_all("")?
-        //    .iter()
-        //    .find(|session| session.name == name)
-        //    .expect("the newly created session should be found");
-        //let session = Session::default().with_name(name);
+        TmuxCommand::create_session(name);
     }
 
     pub fn kill(name: &str) {

@@ -43,7 +43,7 @@ pub struct WindowService;
 
 impl WindowService {
     pub fn get_all(session_name: &str) -> Result<Vec<Window>> {
-        let windows = TmuxCommand::list_windows(session_name)?;
+        let windows = TmuxCommand::get_windows(session_name)?;
 
         str::from_utf8(&windows)
             .context("error parsing list-windows output")?
@@ -51,6 +51,16 @@ impl WindowService {
             .map(|s| s.trim())
             .map(Window::from_str)
             .collect()
+    }
+
+    pub fn get_window(session_name: &str, window_name: &str) -> Result<Window> {
+        let window = TmuxCommand::get_window(session_name, window_name)?;
+
+        str::from_utf8(&window)
+            .context("error parsing get-window output")
+            .map(|s| s.trim())
+            .context("error converting str to Window")
+            .and_then(Window::from_str)
     }
 
     pub fn create(session_name: &str, current_window_name: &str, name: &str) {
