@@ -56,6 +56,8 @@ impl WindowService {
     pub fn get_window(session_name: &str, window_name: &str) -> Result<Window> {
         let window = TmuxCommand::get_window(session_name, window_name)?;
 
+        dbg!(&str::from_utf8(&window).unwrap());
+
         str::from_utf8(&window)
             .context("error parsing get-window output")
             .map(|s| s.trim())

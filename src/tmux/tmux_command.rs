@@ -49,19 +49,18 @@ impl TmuxCommand {
     }
 
     pub fn get_window(session_name: &str, name: &str) -> Result<Vec<u8>> {
-        Ok(base_cmd()
-            .args([
-                "list-windows",
-                "-t",
-                session_name,
-                "-F",
-                WINDOW_FORMAT,
-                "-f",
-                &format!("#{{m:{},#W}}", name),
-            ])
-            .output()
-            .context("get window command failed")?
-            .stdout)
+        let mut cmd = base_cmd();
+        let cmd = cmd.args([
+            "list-windows",
+            "-F",
+            WINDOW_FORMAT,
+            "-f",
+            &format!("#{{m:{},#W}}", name),
+            "-t",
+            session_name,
+        ]);
+        dbg!(&cmd.get_args());
+        Ok(cmd.output().context("get window command failed")?.stdout)
     }
 
     pub fn rename_session(old_name: &str, new_name: &str) {

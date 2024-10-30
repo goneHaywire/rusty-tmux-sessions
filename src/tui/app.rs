@@ -31,6 +31,7 @@ pub struct App {
 
 impl App {
     fn load_sessions(&mut self) {
+        self.sessions.clear();
         let sessions = SessionService::get_all().unwrap();
 
         for session in sessions {
@@ -45,12 +46,15 @@ impl App {
         self.windows.insert(session_name.clone(), windows);
     }
 
-    fn update_session_list(&mut self) {
+    fn update_session_list(&mut self, selection: Option<Selection>) {
         let names = self.sessions.keys().cloned().collect();
+        if let Some(selection) = selection {
+            self.session_list.select(selection);
+        }
         self.session_list.items(names);
     }
 
-    fn set_visible_windows(&mut self) {
+    fn set_visible_windows(&mut self, selection: Option<Selection>) {
         let session_name = self.session_list.get_active_item();
         let names = self
             .windows
@@ -59,7 +63,10 @@ impl App {
             .iter()
             .map(|w| w.name.clone())
             .collect();
-        self.window_list = StatefulList::with_items(names);
+        self.window_list.items(names);
+        if let Some(selection) = selection {
+            self.window_list.select(selection);
+        }
     }
 
     fn toggle_is_renaming(&mut self) {
@@ -101,7 +108,7 @@ impl App {
             .remove(&old_name)
             .expect("session should be stored");
         self.sessions.insert(new_name.into(), sesh);
-        self.update_session_list();
+        self.update_session_list(None);
         self.toggle_is_renaming();
     }
 
@@ -117,7 +124,7 @@ impl App {
                 windows.swap_remove(index);
             }
         });
-        self.set_visible_windows();
+        self.set_visible_windows(None);
         self.toggle_is_renaming();
     }
 
@@ -135,7 +142,7 @@ impl App {
                 .unwrap();
             windows.insert(current_window + 1, window);
         });
-        self.set_visible_windows();
+        self.set_visible_windows(None);
     }
 
     fn create_session(&mut self, name: &str) {
@@ -144,7 +151,7 @@ impl App {
         SessionService::create(name);
         let session = SessionService::get_session(name).unwrap();
         self.sessions.insert(session.name.clone(), session);
-        self.update_session_list();
+        self.update_session_list(None);
     }
 
     fn kill_session(&mut self) {
@@ -153,25 +160,26 @@ impl App {
         self.toggle_is_killing();
         self.sessions.remove(&session);
         self.windows.remove(&session);
-        self.update_session_list();
+        self.update_session_list(Some(Selection::Prev));
     }
 
     fn kill_window(&mut self) {
         let session = self.session_list.get_active_item();
         let window = self.window_list.get_active_item();
-        self.toggle_is_killing();
 
         WindowService::kill(&session, &window);
         self.windows.entry(session.clone()).and_modify(|windows| {
             windows.retain(|w| w.name != window);
         });
+        self.toggle_is_killing();
         if self.windows.get(&session).unwrap().is_empty() {
             self.sessions.remove(&session);
             self.windows.remove(&session);
-            self.update_session_list();
+            self.update_session_list(Some(Selection::Prev));
+            self.set_visible_windows(None);
             self.mode = self.mode.go_to_section(Section::Sessions);
         }
-        self.set_visible_windows();
+        self.set_visible_windows(Some(Selection::Prev));
     }
 
     fn input_key(&mut self, key: KeyCode) {
@@ -420,9 +428,9 @@ impl App {
             Tick => {}
             Init => {
                 self.load_sessions();
-                self.update_session_list();
+                self.update_session_list(None);
                 self.load_windows();
-                self.set_visible_windows();
+                self.set_visible_windows(None);
             }
             Quit => self.exit(),
             LoadSessions => self.load_sessions(),
@@ -434,7 +442,7 @@ impl App {
                 if !self.windows.contains_key(&session) {
                     self.load_windows();
                 }
-                self.set_visible_windows();
+                self.set_visible_windows(Some(Selection::First));
             }
             SelectWindow(selection) => {
                 self.window_list.select(selection);

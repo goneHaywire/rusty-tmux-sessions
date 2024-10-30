@@ -14,6 +14,7 @@ pub enum Selection {
 /// * `items`: Vector of Sessions or Windows
 /// * `state`: ListState
 /// * `show_hidden`: Whether to show hidden items or not
+#[derive(Debug)]
 pub struct StatefulList {
     pub items: Vec<String>,
     pub state: ListState,
