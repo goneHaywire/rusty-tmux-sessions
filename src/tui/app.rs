@@ -87,99 +87,124 @@ impl App {
 
     fn attach_session(&mut self) {
         let current_session = self.session_list.get_active_item();
-        SessionService::attach(&current_session);
-        self.mode = self.mode.exit().unwrap();
+        if let Ok(mode) =
+            SessionService::attach(&current_session).and_then(|_| self.mode.exit().into())
+        {
+            self.mode = mode;
+        }
     }
 
     fn attach_window(&mut self) {
         let session = self.session_list.get_active_item();
         let window = self.window_list.get_active_item();
 
-        WindowService::attach(&session, &window);
-        self.mode = self.mode.exit().unwrap();
+        if let Ok(mode) =
+            WindowService::attach(&session, &window).and_then(|_| self.mode.exit().into())
+        {
+            self.mode = mode;
+        }
     }
 
     fn rename_session(&mut self, new_name: &str) {
         let old_name = self.session_list.get_active_item();
 
-        SessionService::rename(&old_name, new_name);
-        let sesh = self
-            .sessions
-            .remove(&old_name)
-            .expect("session should be stored");
-        self.sessions.insert(new_name.into(), sesh);
-        self.update_session_list(None);
+        if SessionService::rename(&old_name, new_name).is_ok() {
+            let sesh = self
+                .sessions
+                .remove(&old_name)
+                .expect("session should be stored");
+            self.sessions.insert(new_name.into(), sesh);
+            self.update_session_list(None);
+        };
         self.toggle_is_renaming();
     }
 
     fn rename_window(&mut self, new_name: &str) {
-        let session_name = self.session_list.get_active_item();
+        let session = self.session_list.get_active_item();
         let old_name = self.window_list.get_active_item();
 
-        WindowService::rename(&session_name, &old_name, new_name);
-        let window = WindowService::get_window(&session_name, new_name).unwrap();
-        self.windows.entry(session_name).and_modify(|windows| {
-            if let Some(index) = windows.iter().position(|w| w.name == old_name) {
-                windows.push(window);
-                windows.swap_remove(index);
-            }
-        });
-        self.set_visible_windows(None);
+        if !self.is_duplicate_window(&session, new_name.into())
+            && WindowService::rename(&session, &old_name, new_name).is_ok()
+        {
+            let window = WindowService::get_window(&session, new_name).unwrap();
+            self.windows.entry(session).and_modify(|windows| {
+                if let Some(index) = windows.iter().position(|w| w.name == old_name) {
+                    windows.push(window);
+                    windows.swap_remove(index);
+                }
+            });
+            self.set_visible_windows(None);
+        };
         self.toggle_is_renaming();
     }
 
     fn create_window(&mut self, name: &str) {
-        let curr_window_name = self.window_list.get_active_item().clone();
+        let curr_window_name = self.window_list.get_active_item();
         let session = self.session_list.get_active_item();
-        self.toggle_is_adding();
 
-        WindowService::create(&session, &curr_window_name, name);
-        let window = WindowService::get_window(&session, name).unwrap();
-        self.windows.entry(session).and_modify(|windows| {
-            let current_window = windows
-                .iter()
-                .position(|w| w.name == curr_window_name)
-                .unwrap();
-            windows.insert(current_window + 1, window);
-        });
-        self.set_visible_windows(None);
+        if !self.is_duplicate_window(&session, name.into()) && name != curr_window_name
+            && WindowService::create(&session, &curr_window_name, name).is_ok()
+        {
+            let window = WindowService::get_window(&session, name).unwrap();
+            self.windows.entry(session).and_modify(|windows| {
+                let current_window = windows
+                    .iter()
+                    .position(|w| w.name == curr_window_name)
+                    .unwrap();
+                windows.insert(current_window + 1, window);
+            });
+            self.set_visible_windows(None);
+        }
+        self.toggle_is_adding();
     }
 
     fn create_session(&mut self, name: &str) {
+        // TODO: create will return the name of the new item
+        if SessionService::create(name).is_ok() {
+            let session = SessionService::get_session(name).unwrap();
+            self.sessions.insert(session.name.clone(), session);
+            self.update_session_list(None);
+        }
         self.toggle_is_adding();
-
-        SessionService::create(name);
-        let session = SessionService::get_session(name).unwrap();
-        self.sessions.insert(session.name.clone(), session);
-        self.update_session_list(None);
     }
 
     fn kill_session(&mut self) {
         let session = self.session_list.get_active_item();
-        SessionService::kill(&session);
+        if SessionService::kill(&session).is_ok() {
+            self.sessions.remove(&session);
+            self.windows.remove(&session);
+            self.update_session_list(Some(Selection::Prev));
+        }
         self.toggle_is_killing();
-        self.sessions.remove(&session);
-        self.windows.remove(&session);
-        self.update_session_list(Some(Selection::Prev));
     }
 
     fn kill_window(&mut self) {
         let session = self.session_list.get_active_item();
         let window = self.window_list.get_active_item();
 
-        WindowService::kill(&session, &window);
-        self.windows.entry(session.clone()).and_modify(|windows| {
-            windows.retain(|w| w.name != window);
-        });
-        self.toggle_is_killing();
-        if self.windows.get(&session).unwrap().is_empty() {
-            self.sessions.remove(&session);
-            self.windows.remove(&session);
-            self.update_session_list(Some(Selection::Prev));
-            self.set_visible_windows(None);
-            self.mode = self.mode.go_to_section(Section::Sessions);
+        if WindowService::kill(&session, &window).is_ok() {
+            self.windows.entry(session.clone()).and_modify(|windows| {
+                windows.retain(|w| w.name != window);
+            });
+            if self.windows.get(&session).unwrap().is_empty() {
+                self.sessions.remove(&session);
+                self.windows.remove(&session);
+                self.update_session_list(Some(Selection::Prev));
+                self.set_visible_windows(None);
+                self.mode = self.mode.go_to_section(Section::Sessions);
+            } else {
+                self.set_visible_windows(Some(Selection::Prev));
+            }
         }
-        self.set_visible_windows(Some(Selection::Prev));
+        self.toggle_is_killing();
+    }
+
+    fn is_duplicate_window(&self, session: &String, window: String) -> bool {
+        self.windows
+            .get(session)
+            .unwrap()
+            .iter()
+            .any(|w| w.name == window)
     }
 
     fn input_key(&mut self, key: KeyCode) {

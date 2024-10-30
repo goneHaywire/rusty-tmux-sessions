@@ -7,7 +7,7 @@ use anyhow::{Context, Error, Result};
 
 use super::{tmux::TmuxEntity, tmux_command::TmuxCommand};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Session {
     pub name: String,
     is_attached: bool,
@@ -17,18 +17,6 @@ pub struct Session {
     is_hidden: bool,
 }
 
-impl Default for Session {
-    fn default() -> Self {
-        Self {
-            name: Default::default(),
-            is_attached: false,
-            last_attached: Default::default(),
-            created_at: Default::default(),
-            windows_count: 0,
-            is_hidden: false,
-        }
-    }
-}
 
 impl Session {
     fn with_name(mut self, name: &str) -> Self {
@@ -90,27 +78,27 @@ impl SessionService {
             .and_then(Session::from_str)
     }
 
-    pub fn create(name: &str) {
-        TmuxCommand::create_session(name);
+    pub fn create(name: &str) -> Result<()> {
+        TmuxCommand::create_session(name)
     }
 
-    pub fn kill(name: &str) {
-        TmuxCommand::kill_session(name);
+    pub fn kill(name: &str) -> Result<()> {
+        TmuxCommand::kill_session(name)
     }
 
-    pub fn rename(old_name: &str, new_name: &str) {
-        TmuxCommand::rename_session(old_name, new_name);
+    pub fn rename(old_name: &str, new_name: &str) -> Result<()> {
+        TmuxCommand::rename_session(old_name, new_name)
     }
 
-    pub fn attach(name: &str) {
-        TmuxCommand::attach_session(name);
+    pub fn attach(name: &str) -> Result<()> {
+        TmuxCommand::attach_session(name)
     }
 
-    pub fn hide(name: &str) {
-        todo!();
+    pub fn hide(name: &str) -> Result<()> {
+        todo!()
     }
 
-    pub fn show(name: &str) {
-        todo!();
+    pub fn show(name: &str) -> Result<()> {
+        todo!()
     }
 }

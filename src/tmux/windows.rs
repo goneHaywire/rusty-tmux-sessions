@@ -56,7 +56,7 @@ impl WindowService {
     pub fn get_window(session_name: &str, window_name: &str) -> Result<Window> {
         let window = TmuxCommand::get_window(session_name, window_name)?;
 
-        dbg!(&str::from_utf8(&window).unwrap());
+        // dbg!(&str::from_utf8(&window).unwrap());
 
         str::from_utf8(&window)
             .context("error parsing get-window output")
@@ -65,28 +65,28 @@ impl WindowService {
             .and_then(Window::from_str)
     }
 
-    pub fn create(session_name: &str, current_window_name: &str, name: &str) {
-        TmuxCommand::create_window(session_name, current_window_name, name);
+    pub fn create(session_name: &str, current_window_name: &str, name: &str) -> Result<()> {
+        TmuxCommand::create_window(session_name, current_window_name, name)
     }
 
-    pub fn kill(session_name: &str, name: &str) {
-        TmuxCommand::kill_window(session_name, name);
+    pub fn kill(session_name: &str, name: &str) -> Result<()> {
+        TmuxCommand::kill_window(session_name, name)
     }
 
-    pub fn rename(session_name: &str, old_name: &str, new_name: &str) {
-        TmuxCommand::rename_window(session_name, old_name, new_name);
+    pub fn rename(session_name: &str, old_name: &str, new_name: &str) -> Result<()> {
+        TmuxCommand::rename_window(session_name, old_name, new_name)
     }
 
-    pub fn attach(session_name: &str, name: &str) {
-        TmuxCommand::attach_window(session_name, name);
+    pub fn attach(session_name: &str, name: &str) -> Result<()> {
+        TmuxCommand::attach_window(session_name, name)
     }
 
-    fn show(name: &str) {
-        todo!();
+    fn show(name: &str) -> Result<()> {
+        todo!()
     }
 
-    fn hide(name: &str) {
-        todo!();
+    fn hide(name: &str) -> Result<()> {
+        todo!()
     }
 }
 

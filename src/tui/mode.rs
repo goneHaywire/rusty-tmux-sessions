@@ -1,3 +1,5 @@
+use anyhow::{anyhow, Result};
+
 use super::input::InputState;
 
 #[derive(PartialEq, Default, Clone, Copy, Debug)]
@@ -21,6 +23,15 @@ pub enum Mode {
 pub enum ToggleResult {
     Toggled(Mode),
     NotToggled(Mode),
+}
+
+impl Into<Result<Mode>> for ToggleResult {
+    fn into(self) -> Result<Mode> {
+        match self {
+            Self::Toggled(mode) => Ok(mode),
+            Self::NotToggled(_) => Err(anyhow!("mode was not changed"))
+        }
+    }
 }
 
 impl ToggleResult {
