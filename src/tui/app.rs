@@ -1,9 +1,14 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use std::{collections::HashMap, io};
+use std::{
+    cmp::{max, min},
+    collections::HashMap,
+    io,
+};
 
 use crate::{
     tmux::{
         sessions::{Session, SessionService},
+        tmux_command::WindowPos,
         windows::{Window, WindowService},
     },
     tui::{action::Actions, tmux_list::Selection, view},

@@ -2,10 +2,14 @@ use std::str::{self, FromStr};
 
 use anyhow::{Context, Error, Result};
 
-use super::{tmux::TmuxEntity, tmux_command::TmuxCommand};
+use super::{
+    tmux::TmuxEntity,
+    tmux_command::{TmuxCommand, WindowPos},
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct Window {
+    pub id: usize,
     pub name: String,
     is_active: bool,
     last_active: u64,
@@ -22,17 +26,18 @@ impl FromStr for Window {
 
         assert_eq!(
             parts.len(),
-            4,
-            "should be 4 parts in list-windows format str"
+            5,
+            "should be 5 parts in list-windows format str"
         );
 
         Ok(Window {
-            name: parts[0].into(),
-            is_active: parts[1] == "1",
-            last_active: parts[2]
+            id: parts[0].parse().unwrap(),
+            name: parts[1].into(),
+            is_active: parts[2] == "1",
+            last_active: parts[3]
                 .parse()
                 .context("error parsing window last_active")?,
-            panes_count: parts[3]
+            panes_count: parts[4]
                 .parse()
                 .context("error parsing window panes_count")?,
         })
@@ -53,10 +58,8 @@ impl WindowService {
             .collect()
     }
 
-    pub fn get_window(session_name: &str, window_name: &str) -> Result<Window> {
-        let window = TmuxCommand::get_window(session_name, window_name)?;
-
-        // dbg!(&str::from_utf8(&window).unwrap());
+    pub fn get_window(session_name: &str, id: usize) -> Result<Window> {
+        let window = TmuxCommand::get_window(session_name, id)?;
 
         str::from_utf8(&window)
             .context("error parsing get-window output")
@@ -65,20 +68,20 @@ impl WindowService {
             .and_then(Window::from_str)
     }
 
-    pub fn create(session_name: &str, current_window_name: &str, name: &str) -> Result<()> {
-        TmuxCommand::create_window(session_name, current_window_name, name)
+    pub fn create(session_name: &str, id: usize, name: &str, pos: &WindowPos) -> Result<()> {
+        TmuxCommand::create_window(session_name, id, name, &pos)
     }
 
-    pub fn kill(session_name: &str, name: &str) -> Result<()> {
-        TmuxCommand::kill_window(session_name, name)
+    pub fn kill(session_name: &str, id: usize) -> Result<()> {
+        TmuxCommand::kill_window(session_name, id)
     }
 
-    pub fn rename(session_name: &str, old_name: &str, new_name: &str) -> Result<()> {
-        TmuxCommand::rename_window(session_name, old_name, new_name)
+    pub fn rename(session_name: &str, id: usize, new_name: &str) -> Result<()> {
+        TmuxCommand::rename_window(session_name, id, new_name)
     }
 
-    pub fn attach(session_name: &str, name: &str) -> Result<()> {
-        TmuxCommand::attach_window(session_name, name)
+    pub fn attach(session_name: &str, id: usize) -> Result<()> {
+        TmuxCommand::attach_window(session_name, id)
     }
 
     fn show(name: &str) -> Result<()> {
