@@ -1,8 +1,9 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::{
-    cmp::{max, min},
+    cmp,
     collections::HashMap,
     io,
+    sync::mpsc::{self, Receiver, Sender},
 };
 
 use crate::{
@@ -16,12 +17,12 @@ use crate::{
 
 use super::{
     event::Events,
+    logger::Logger,
     mode::{Mode, Section, ToggleResult::*},
     tmux_list::StatefulList,
     tui::TUI,
 };
 
-#[derive(Default)]
 pub struct App {
     // TODO: add the structs of other widgets
     // since the App controls state, it will modify the state of each widget
@@ -32,6 +33,8 @@ pub struct App {
     sessions: HashMap<String, Session>,
     windows: HashMap<String, Vec<Window>>,
     pub mode: Mode,
+    atx: Sender<Actions<'static>>,
+    arx: Receiver<Actions<'static>>,
 }
 
 impl App {
@@ -51,15 +54,15 @@ impl App {
         self.windows.insert(session_name.clone(), windows);
     }
 
-    fn update_session_list(&mut self, selection: Option<Selection>) {
+    fn hydrate_session_list(&mut self, selection: Option<Selection>) {
         let names = self.sessions.keys().cloned().collect();
+        self.session_list.items(names);
         if let Some(selection) = selection {
             self.session_list.select(selection);
         }
-        self.session_list.items(names);
     }
 
-    fn set_visible_windows(&mut self, selection: Option<Selection>) {
+    fn hydrate_window_list(&mut self, selection: Option<Selection>) {
         let session_name = self.session_list.get_active_item();
         let names = self
             .windows
@@ -102,10 +105,9 @@ impl App {
     fn attach_window(&mut self) {
         let session = self.session_list.get_active_item();
         let window = self.window_list.get_active_item();
+        let id = self.get_selected_window(&session).unwrap().id;
 
-        if let Ok(mode) =
-            WindowService::attach(&session, &window).and_then(|_| self.mode.exit().into())
-        {
+        if let Ok(mode) = WindowService::attach(&id).and_then(|_| self.mode.exit().into()) {
             self.mode = mode;
         }
     }
@@ -119,46 +121,47 @@ impl App {
                 .remove(&old_name)
                 .expect("session should be stored");
             self.sessions.insert(new_name.into(), sesh);
-            self.update_session_list(None);
+            self.hydrate_session_list(None);
         };
         self.toggle_is_renaming();
     }
 
     fn rename_window(&mut self, new_name: &str) {
         let session = self.session_list.get_active_item();
-        let old_name = self.window_list.get_active_item();
+        let id = self.get_selected_window(&session).unwrap().id;
 
-        if !self.is_duplicate_window(&session, new_name.into())
-            && WindowService::rename(&session, &old_name, new_name).is_ok()
-        {
-            let window = WindowService::get_window(&session, new_name).unwrap();
-            self.windows.entry(session).and_modify(|windows| {
-                if let Some(index) = windows.iter().position(|w| w.name == old_name) {
-                    windows.push(window);
-                    windows.swap_remove(index);
-                }
-            });
-            self.set_visible_windows(None);
+        if WindowService::rename(&id, new_name).is_ok() {
+            if let Ok(window) = WindowService::get_window(&session, &id) {
+                self.windows.entry(session).and_modify(|windows| {
+                    if let Some(index) = windows.iter().position(|w| w.id == id) {
+                        windows.push(window);
+                        windows.swap_remove(index);
+                    }
+                });
+                self.hydrate_window_list(None);
+            }
         };
         self.toggle_is_renaming();
     }
 
-    fn create_window(&mut self, name: &str) {
+    fn create_window(&mut self, name: &str, pos: WindowPos) {
         let curr_window_name = self.window_list.get_active_item();
         let session = self.session_list.get_active_item();
+        let id = self.get_selected_window(&session).unwrap().id;
+        Logger::log(&format!("creating window after win with id {id}"));
 
-        if !self.is_duplicate_window(&session, name.into()) && name != curr_window_name
-            && WindowService::create(&session, &curr_window_name, name).is_ok()
-        {
-            let window = WindowService::get_window(&session, name).unwrap();
+        if WindowService::create(name, &id, &pos).is_ok() {
+            let window = WindowService::get_window(&session, &id).unwrap();
+            Logger::log(&format!("got window after create {:?}", window));
             self.windows.entry(session).and_modify(|windows| {
-                let current_window = windows
-                    .iter()
-                    .position(|w| w.name == curr_window_name)
-                    .unwrap();
-                windows.insert(current_window + 1, window);
+                let current_window = windows.iter().position(|w| w.id == id).unwrap();
+                let index = match pos {
+                    WindowPos::Before => cmp::max(current_window - 1, 0),
+                    WindowPos::After => cmp::min(current_window + 1, windows.len()),
+                };
+                windows.insert(index, window);
             });
-            self.set_visible_windows(None);
+            self.hydrate_window_list(None);
         }
         self.toggle_is_adding();
     }
@@ -168,7 +171,7 @@ impl App {
         if SessionService::create(name).is_ok() {
             let session = SessionService::get_session(name).unwrap();
             self.sessions.insert(session.name.clone(), session);
-            self.update_session_list(None);
+            self.hydrate_session_list(None);
         }
         self.toggle_is_adding();
     }
@@ -178,30 +181,40 @@ impl App {
         if SessionService::kill(&session).is_ok() {
             self.sessions.remove(&session);
             self.windows.remove(&session);
-            self.update_session_list(Some(Selection::Prev));
+            Logger::log(&format!("sessions: {:?}", self.sessions));
+            Logger::log(&format!("windows: {:?}", self.windows));
+
+            self.hydrate_session_list(None);
+            self.atx
+                .clone()
+                .send(Actions::SelectSession(Selection::Prev))
+                .unwrap();
+            // self.set_visible_windows(None);
         }
         self.toggle_is_killing();
     }
 
     fn kill_window(&mut self) {
         let session = self.session_list.get_active_item();
-        let window = self.window_list.get_active_item();
+        let id = self.get_selected_window(&session).unwrap().id;
 
-        if WindowService::kill(&session, &window).is_ok() {
+        if WindowService::kill(&id).is_ok() {
             self.windows.entry(session.clone()).and_modify(|windows| {
-                windows.retain(|w| w.name != window);
+                windows.retain(|w| w.id != id);
             });
             if self.windows.get(&session).unwrap().is_empty() {
-                self.sessions.remove(&session);
-                self.windows.remove(&session);
-                self.update_session_list(Some(Selection::Prev));
-                self.set_visible_windows(None);
+                // self.sessions.remove(&session);
+                // self.windows.remove(&session);
+                self.kill_session();
+
                 self.mode = self.mode.go_to_section(Section::Sessions);
+                // self.update_session_list(Some(Selection::Prev));
+                // self.set_visible_windows(None);
             } else {
-                self.set_visible_windows(Some(Selection::Prev));
+                self.toggle_is_killing();
+                self.hydrate_window_list(Some(Selection::PrevNoWrap));
             }
         }
-        self.toggle_is_killing();
     }
 
     fn is_duplicate_window(&self, session: &String, window: String) -> bool {
@@ -239,20 +252,53 @@ impl App {
     fn exit(&mut self) {
         self.mode = self.mode.exit().unwrap();
     }
+
+    fn get_window_by_name(&self, session: &String, name: &String) -> Option<&Window> {
+        self.windows
+            .get(session)
+            .unwrap()
+            .iter()
+            .find(|&w| w.name == *name)
+    }
+
+    fn get_selected_window(&self, session: &String) -> Option<&Window> {
+        match self.window_list.state.selected() {
+            Some(index) => self.windows.get(session).unwrap().get(index),
+            None => None,
+        }
+    }
+}
+
+impl Default for App {
+    fn default() -> Self {
+        let (atx, arx) = mpsc::channel::<Actions>();
+        Self {
+            session_list: Default::default(),
+            window_list: Default::default(),
+            sessions: Default::default(),
+            windows: Default::default(),
+            mode: Default::default(),
+            atx,
+            arx,
+        }
+    }
 }
 
 impl App {
     pub fn run(&mut self, tui: &mut TUI) -> io::Result<()> {
         while !self.mode.should_exit() {
-            let state = self.mode.clone();
-            let action = match tui.events.next() {
-                Events::Key(k) => App::handle_key_events(&state, k),
-                Events::Resize(_, _) | Events::Tick => Actions::Tick,
-                Events::Init => Actions::Init,
-                Events::Quit => Actions::Quit,
-            };
-            // TODO: in the future you can create a dedicated action channel to dispatch actions directly instead of only waiting for events to trigger them
-            self.handle_action(action);
+            if let Ok(action) = self.arx.try_recv() {
+                self.handle_action(action);
+            } else {
+                let state = &self.mode.clone();
+                let action = match tui.events.next() {
+                    Events::Key(k) => App::handle_key_events(state, k),
+                    Events::Resize(_, _) | Events::Tick => Actions::Tick,
+                    Events::Init => Actions::Init,
+                    Events::Quit => Actions::Quit,
+                };
+                self.handle_action(action);
+            }
 
             // draw the screen
             // TODO: decide where to interface with the view
@@ -266,7 +312,7 @@ impl App {
         use Mode::*;
         use Section::*;
 
-        match (key, &mode) {
+        match (key, mode) {
             // renaming & creating
             (
                 KeyEvent {
@@ -458,21 +504,21 @@ impl App {
             Tick => {}
             Init => {
                 self.load_sessions();
-                self.update_session_list(None);
+                self.hydrate_session_list(None);
                 self.load_windows();
-                self.set_visible_windows(None);
+                self.hydrate_window_list(None);
             }
             Quit => self.exit(),
             LoadSessions => self.load_sessions(),
             LoadWindows => self.load_windows(),
             CreateSession(name) => self.create_session(name),
-            CreateWindow(name) => self.create_window(name),
+            CreateWindow(name) => self.create_window(name, WindowPos::After),
             SelectSession(selection) => {
                 let session = self.session_list.select(selection);
                 if !self.windows.contains_key(&session) {
                     self.load_windows();
                 }
-                self.set_visible_windows(Some(Selection::First));
+                self.hydrate_window_list(Some(Selection::First));
             }
             SelectWindow(selection) => {
                 self.window_list.select(selection);

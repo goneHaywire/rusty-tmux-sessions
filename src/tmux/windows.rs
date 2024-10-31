@@ -1,15 +1,44 @@
-use std::str::{self, FromStr};
+use std::{
+    fmt::Display,
+    str::{self, FromStr},
+};
 
 use anyhow::{Context, Error, Result};
+
+use crate::tui::logger::Logger;
 
 use super::{
     tmux::TmuxEntity,
     tmux_command::{TmuxCommand, WindowPos},
 };
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub struct IdW(usize);
+
+impl From<usize> for IdW {
+    fn from(value: usize) -> Self {
+        Self(value)
+    }
+}
+
+impl FromStr for IdW {
+    type Err = Error;
+
+    fn from_str(s: &str) -> std::prelude::v1::Result<Self, Self::Err> {
+        let num: usize = s.trim_start_matches('@').parse()?;
+        Ok(Self(num))
+    }
+}
+
+impl Display for IdW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "@{}", self.0)
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Window {
-    pub id: usize,
+    pub id: IdW,
     pub name: String,
     is_active: bool,
     last_active: u64,
@@ -58,7 +87,7 @@ impl WindowService {
             .collect()
     }
 
-    pub fn get_window(session_name: &str, id: usize) -> Result<Window> {
+    pub fn get_window(session_name: &str, id: &IdW) -> Result<Window> {
         let window = TmuxCommand::get_window(session_name, id)?;
 
         str::from_utf8(&window)
@@ -68,20 +97,23 @@ impl WindowService {
             .and_then(Window::from_str)
     }
 
-    pub fn create(session_name: &str, id: usize, name: &str, pos: &WindowPos) -> Result<()> {
-        TmuxCommand::create_window(session_name, id, name, &pos)
+    pub fn create(name: &str, id: &IdW, pos: &WindowPos) -> Result<()> {
+        Logger::log(&format!("creating {id}"));
+        TmuxCommand::create_window(name, id, pos)
     }
 
-    pub fn kill(session_name: &str, id: usize) -> Result<()> {
-        TmuxCommand::kill_window(session_name, id)
+    pub fn kill(id: &IdW) -> Result<()> {
+        Logger::log(&format!("killing {id}"));
+        TmuxCommand::kill_window(id)
     }
 
-    pub fn rename(session_name: &str, id: usize, new_name: &str) -> Result<()> {
-        TmuxCommand::rename_window(session_name, id, new_name)
+    pub fn rename(id: &IdW, new_name: &str) -> Result<()> {
+        Logger::log(&format!("renaming {id}"));
+        TmuxCommand::rename_window(id, new_name)
     }
 
-    pub fn attach(session_name: &str, id: usize) -> Result<()> {
-        TmuxCommand::attach_window(session_name, id)
+    pub fn attach(id: &IdW) -> Result<()> {
+        TmuxCommand::attach_window(id)
     }
 
     fn show(name: &str) -> Result<()> {

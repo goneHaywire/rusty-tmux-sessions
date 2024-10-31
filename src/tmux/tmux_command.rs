@@ -5,6 +5,10 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
+
+use crate::tui::logger::Logger;
+
+use super::windows::IdW;
 const SESSION_FORMAT: &str =
     "#{#{session_id},#S,#{?session_attached,1,},#{session_last_attached},#{session_windows},#{session_created}}";
 
@@ -82,19 +86,19 @@ impl TmuxCommand {
             .as_result("get session command failed")
     }
 
-    pub fn get_window(session_name: &str, index: usize) -> Result<Vec<u8>> {
+    pub fn get_window(session_name: &str, id: &IdW) -> Result<Vec<u8>> {
         base_cmd()
             .args([
                 "list-windows",
                 "-F",
                 WINDOW_FORMAT,
                 "-f",
-                &format!("#{{m:{index},#I}}"),
+                &format!("#{{==:{id},#{{window_id}}}}"),
                 "-t",
                 session_name,
             ])
             .output()
-            .as_result("get window command failed for window at index {index}")
+            .as_result("get window command failed for window @{id}")
     }
 
     pub fn rename_session(old_name: &str, new_name: &str) -> Result<()> {
@@ -105,16 +109,15 @@ impl TmuxCommand {
             .map(|_| ())
     }
 
-    pub fn rename_window(session_name: &str, index: usize, new_name: &str) -> Result<()> {
-        base_cmd()
-            .args([
-                "rename-window",
-                "-t",
-                &format!("{session_name}:{index}"),
-                new_name,
-            ])
+    pub fn rename_window(id: &IdW, new_name: &str) -> Result<()> {
+        let mut cmd = base_cmd();
+        let cmd = cmd
+            .args(["rename-window", "-t", &id.to_string(), new_name]);
+        Logger::log(&format!("{:?}", cmd));
+
+        cmd
             .output()
-            .as_result(&format!("rename-window failed for window at index {index}",))
+            .as_result(&format!("rename-window failed for window @{id}",))
             .map(|_| ())
     }
 
@@ -126,54 +129,64 @@ impl TmuxCommand {
             .map(|_| ())
     }
 
-    pub fn attach_window(session_name: &str, index: usize) -> Result<()> {
+    pub fn attach_window(id: &IdW) -> Result<()> {
         base_cmd()
-            .args(["switch-client", "-t", &format!("{session_name}:{index}")])
+            .args(["switch-client", "-t", &id.to_string()])
             .output()
-            .as_result(&format!("select-window failed for window at index {index}",))
+            .as_result(&format!("select-window failed for window @{id}",))
             .map(|_| ())
     }
 
     pub fn kill_session(name: &str) -> Result<()> {
-        base_cmd()
-            .args(["kill-session", "-t", name])
+        let mut cmd = base_cmd();
+        let cmd = cmd
+            .args(["kill-session", "-t", name]);
+        Logger::log(&format!("{:?}", cmd));
+        cmd
             .output()
             .as_result(&format!("kill-session failed for session {name}",))
             .map(|_| ())
     }
 
-    pub fn kill_window(session_name: &str, index: usize) -> Result<()> {
-        base_cmd()
-            .args(["kill-window", "-t", &format!("{session_name}:{index}")])
+    pub fn kill_window(id: &IdW) -> Result<()> {
+        let mut cmd =base_cmd();
+        let cmd = cmd
+            .args(["kill-window", "-t", &id.to_string()]);
+
+        Logger::log(&format!("{:?}", cmd));
+        cmd
             .output()
-            .as_result(&format!("kill-window failed for window {index}"))
+            .as_result(&format!("kill-window failed for window @{id}"))
             .map(|_| ())
     }
 
     pub fn create_session(name: &str) -> Result<()> {
-        base_cmd()
-            .args(["new-session", "-d", "-s", name])
+        let mut cmd = base_cmd();
+        let cmd = cmd
+            .args(["new-session", "-d", "-s", name]);
+
+        Logger::log(&format!("{:?}", cmd));
+        cmd
             .output()
             .as_result(&format!("new-session failed for session {name}"))
             .map(|_| ())
     }
 
-    pub fn create_window(
-        session_name: &str,
-        index: usize,
-        name: &str,
-        pos: &WindowPos,
-    ) -> Result<()> {
-        base_cmd()
+    pub fn create_window(name: &str, id: &IdW, pos: &WindowPos) -> Result<()> {
+        let mut cmd = base_cmd();
+        let cmd = cmd
             .args([
                 "new-window",
                 "-d",
                 &pos.to_string(),
+                "-t",
+                &id.to_string(),
                 "-n",
                 name,
-                "-t",
-                &format!("{session_name}:{index}"),
-            ])
+            ]);
+
+        Logger::log(&format!("{:?}", cmd));
+        cmd
             .output()
             .as_result(&format!("new-window failed for window {name}"))
             .map(|_| ())

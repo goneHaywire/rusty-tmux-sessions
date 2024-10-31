@@ -40,7 +40,7 @@ impl FromStr for Session {
         );
 
         let session = Session {
-            id: parts[0].parse().unwrap(),
+            id: parts[0].trim_start_matches('$').parse().unwrap(),
             name: parts[1].into(),
             is_attached: parts[2] == "1",
             last_attached: parts[3].parse::<u64>().ok(),

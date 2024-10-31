@@ -3,6 +3,9 @@ use std::ops::Index;
 use ratatui::widgets::ListState;
 
 pub enum Selection {
+    Index(Option<usize>),
+    NextNoWrap,
+    PrevNoWrap,
     Next,
     Prev,
     First,
@@ -71,6 +74,9 @@ impl StatefulList {
             Next => self.state.select_next(),
             Prev if current == 0 => self.state.select(Some(last_index)),
             Prev => self.state.select_previous(),
+            Index(index) => self.state.select(index),
+            NextNoWrap => self.state.select_next(),
+            PrevNoWrap => self.state.select_previous(),
         }
         self.get_active_item()
     }
