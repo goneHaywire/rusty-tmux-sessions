@@ -10,6 +10,7 @@ pub enum Selection {
     Prev,
     First,
     Last,
+    Noop,
 }
 
 /// Wrapper for a stateful TUI list
@@ -77,6 +78,7 @@ impl StatefulList {
             Index(index) => self.state.select(index),
             NextNoWrap => self.state.select_next(),
             PrevNoWrap => self.state.select_previous(),
+            Noop => (),
         }
         self.get_active_item()
     }

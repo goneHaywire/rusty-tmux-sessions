@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Result};
 
+use crate::tmux::tmux_command::WindowPos;
+
 use super::input::InputState;
 
 #[derive(PartialEq, Default, Clone, Copy, Debug)]
@@ -12,7 +14,7 @@ pub enum Section {
 #[derive(PartialEq, Clone, Debug)]
 pub enum Mode {
     Select(Section),
-    Create(Section, InputState),
+    Create(Section, InputState, Option<WindowPos>),
     Delete(Section),
     Rename(Section, InputState),
     Help,
@@ -29,7 +31,7 @@ impl Into<Result<Mode>> for ToggleResult {
     fn into(self) -> Result<Mode> {
         match self {
             Self::Toggled(mode) => Ok(mode),
-            Self::NotToggled(_) => Err(anyhow!("mode was not changed"))
+            Self::NotToggled(_) => Err(anyhow!("mode was not changed")),
         }
     }
 }
@@ -59,33 +61,58 @@ impl Default for Mode {
 }
 
 impl Mode {
-    pub fn go_to_section(&self, section: Section) -> Self {
+    pub fn change_section(&self, section: Section) -> Self {
         match self {
             Self::Select(_) => Self::Select(section),
+            Self::Delete(_) => Self::Delete(section),
+            Self::Create(_, input, pos) => Self::Create(section, input.clone(), *pos),
             m => m.clone(),
         }
     }
 
-    pub fn toggle_create(&self) -> ToggleResult {
+    pub fn enter_create(&self, pos: Option<WindowPos>) -> ToggleResult {
         match self {
-            Self::Create(s, _) => Toggled(Self::Select(*s)),
-            Self::Select(s) => Toggled(Self::Create(*s, InputState::default())),
+            Self::Select(s @ Section::Sessions) => {
+                Toggled(Self::Create(*s, InputState::default(), None))
+            }
+            Self::Select(s @ Section::Windows) if pos.is_some() => {
+                Toggled(Self::Create(*s, InputState::default(), pos))
+            }
             v => NotToggled(v.clone()),
         }
     }
 
-    pub fn toggle_delete(&self) -> ToggleResult {
+    pub fn enter_delete(&self) -> ToggleResult {
         match self {
-            Self::Delete(s) => Toggled(Self::Select(*s)),
             Self::Select(s) => Toggled(Self::Delete(*s)),
             v => NotToggled(v.clone()),
         }
     }
 
-    pub fn toggle_rename(&self) -> ToggleResult {
+    pub fn enter_rename(&self) -> ToggleResult {
+        match self {
+            Self::Select(s) => Toggled(Self::Rename(*s, InputState::default())),
+            v => NotToggled(v.clone()),
+        }
+    }
+
+    pub fn exit_create(&self) -> ToggleResult {
+        match self {
+            Self::Create(s, ..) => Toggled(Self::Select(*s)),
+            v => NotToggled(v.clone()),
+        }
+    }
+
+    pub fn exit_delete(&self) -> ToggleResult {
+        match self {
+            Self::Delete(s) => Toggled(Self::Select(*s)),
+            v => NotToggled(v.clone()),
+        }
+    }
+
+    pub fn exit_rename(&self) -> ToggleResult {
         match self {
             Self::Rename(s, _) => Toggled(Self::Select(*s)),
-            Self::Select(s) => Toggled(Self::Rename(*s, InputState::default())),
             v => NotToggled(v.clone()),
         }
     }
@@ -113,7 +140,7 @@ impl Mode {
 
     pub fn is_adding(&self) -> bool {
         match self {
-            Self::Create(_, _) => true,
+            Self::Create(..) => true,
             _ => false,
         }
     }

@@ -9,17 +9,22 @@ todo!
 - [X] rename sessions & windows
 - [X] add sessions & windows
 - [X] kill sessions & windows
-- [ ] refactor tmux commands to work for both sessions & windows
-- [ ] refactor app central state
+- [X] refactor tmux commands to work for both sessions & windows
+- [X] refactor app central state
+- [X] implement session sorting
 - [ ] display session/window details
-- [ ] implement session sorting
+- [ ] send commands to windows
+- [ ] document code
+- [ ] toggle hidden in TUI
+- [ ] add logger for debugging
+- [ ] visual mode selection (batch actions)
 - [ ] styling
 - [ ] add tests
+- [ ] rafactor to tokio
+- [ ] possible groups integration (multiple session groups)
 - [ ] hide/show sessions
 - [ ] pin sessions
 - [ ] reorder sessions/windows
-- [ ] send commands to windows
-- [ ] toggle hidden in TUI
 
 ## Possible features
 

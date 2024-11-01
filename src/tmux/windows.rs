@@ -1,7 +1,5 @@
-use std::{
-    fmt::Display,
-    str::{self, FromStr},
-};
+use core::str;
+use std::{fmt::Display, str::FromStr};
 
 use anyhow::{Context, Error, Result};
 
@@ -12,7 +10,7 @@ use super::{
     tmux_command::{TmuxCommand, WindowPos},
 };
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, PartialOrd, Ord)]
 pub struct IdW(usize);
 
 impl From<usize> for IdW {
@@ -95,6 +93,20 @@ impl WindowService {
             .map(|s| s.trim())
             .context("error converting str to Window")
             .and_then(Window::from_str)
+    }
+
+    pub fn get_last_created_window_id(session_name: &str) -> Result<IdW> {
+        let windows = TmuxCommand::get_windows(session_name)?;
+
+        let ids: Result<Vec<IdW>> = str::from_utf8(&windows)?
+            .lines()
+            .map(|l| {
+                let (id, _) = l.split_once(',').unwrap();
+                id
+            })
+            .map(IdW::from_str)
+            .collect();
+        Ok(ids.unwrap().into_iter().max().unwrap())
     }
 
     pub fn create(name: &str, id: &IdW, pos: &WindowPos) -> Result<()> {
