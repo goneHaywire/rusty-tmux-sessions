@@ -139,9 +139,10 @@ impl WindowService {
 
 #[test]
 fn from_str() {
-    let window_str = "test_window,1,1722892534,4";
+    let window_str = "@42,test_window,1,1722892534,4";
     let window = Window::from_str(window_str).unwrap();
 
+    assert_eq!(IdW::from(42), window.id);
     assert_eq!("test_window".to_string(), window.name);
     assert!(window.is_active);
     assert_eq!(1722892534, window.last_active);

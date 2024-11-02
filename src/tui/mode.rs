@@ -157,38 +157,69 @@ mod test {
     use super::Mode::{self, *};
 
     #[test]
-    fn toggle_creating() {
-        let selecting = Mode::default();
-        let toggled = selecting.toggle_create();
+    fn correct_toggling_create() {
+        let default = Mode::default();
+        assert_eq!(default, Select(Section::Sessions));
+
+        let toggled = default.enter_create(None);
         assert!(toggled.was_toggled());
 
-        let selecting = Mode::default();
-        assert_eq!(selecting, Select(Section::Sessions));
+        let toggled = toggled.unwrap().exit_create();
+        assert!(toggled.was_toggled());
+    }
 
+    #[test]
+    fn incorrect_toggling_create() {
         let other = Delete(Section::Sessions);
-        let not_toggled = other.toggle_create();
+
+        let not_toggled = other.enter_create(None);
+        assert!(!not_toggled.was_toggled());
+
+        let not_toggled = other.exit_create();
         assert!(!not_toggled.was_toggled());
     }
 
     #[test]
-    fn toggle_deleting() {
-        let selecting = Mode::default();
-        let toggled = selecting.toggle_delete();
+    fn correct_toggling_delete() {
+        let default = Mode::default();
+
+        let toggled = default.enter_delete();
         assert!(toggled.was_toggled());
 
-        let create = Mode::default().toggle_create().unwrap();
-        let not_toggled = create.toggle_delete();
+        let toggled = toggled.unwrap().exit_delete();
+        assert!(toggled.was_toggled());
+    }
+
+    #[test]
+    fn incorrect_toggling_delete() {
+        let create = Mode::default().enter_create(None).unwrap();
+
+        let not_toggled = create.enter_delete();
+        assert!(!not_toggled.was_toggled());
+
+        let not_toggled = create.exit_delete();
         assert!(!not_toggled.was_toggled());
     }
 
     #[test]
-    fn toggle_renaming() {
-        let selecting = Mode::default();
-        let toggled = selecting.toggle_rename();
+    fn correct_toggling_rename() {
+        let default = Mode::default();
+
+        let toggled = default.enter_rename();
         assert!(toggled.was_toggled());
 
-        let other = Delete(Section::Sessions);
-        let not_toggled = other.toggle_rename();
+        let toggled = toggled.unwrap().exit_rename();
+        assert!(toggled.was_toggled());
+    }
+
+    #[test]
+    fn incorrect_toggling_rename() {
+        let create = Mode::default().enter_create(None).unwrap();
+
+        let not_toggled = create.enter_rename();
+        assert!(!not_toggled.was_toggled());
+
+        let not_toggled = create.exit_rename();
         assert!(!not_toggled.was_toggled());
     }
 
@@ -196,9 +227,9 @@ mod test {
     fn exit() {
         let (selecting, creating, renaming, deleting) = (
             Mode::default(),
-            Mode::default().toggle_create().unwrap(),
-            Mode::default().toggle_rename().unwrap(),
-            Mode::default().toggle_delete().unwrap(),
+            Mode::default().enter_create(None).unwrap(),
+            Mode::default().enter_rename().unwrap(),
+            Mode::default().enter_delete().unwrap(),
         );
         let selecting = selecting.exit();
         let creating = creating.exit();
