@@ -110,11 +110,9 @@ impl TmuxCommand {
     }
 
     pub fn rename_window(id: &IdW, new_name: &str) -> Result<()> {
-        let mut cmd = base_cmd();
-        let cmd = cmd.args(["rename-window", "-t", &id.to_string(), new_name]);
-        //Logger::log(&format!("{:?}", cmd));
-
-        cmd.output()
+        base_cmd()
+            .args(["rename-window", "-t", &id.to_string(), new_name])
+            .output()
             .as_result(&format!("rename-window failed for window @{id}",))
             .map(|_| ())
     }
@@ -136,48 +134,41 @@ impl TmuxCommand {
     }
 
     pub fn kill_session(name: &str) -> Result<()> {
-        let mut cmd = base_cmd();
-        let cmd = cmd.args(["kill-session", "-t", name]);
-        Logger::log(&format!("{:?}", cmd));
-        cmd.output()
+        base_cmd()
+            .args(["kill-session", "-t", name])
+            .output()
             .as_result(&format!("kill-session failed for session {name}",))
             .map(|_| ())
     }
 
     pub fn kill_window(id: &IdW) -> Result<()> {
-        let mut cmd = base_cmd();
-        let cmd = cmd.args(["kill-window", "-t", &id.to_string()]);
-
-        Logger::log(&format!("{:?}", cmd));
-        cmd.output()
+        base_cmd()
+            .args(["kill-window", "-t", &id.to_string()])
+            .output()
             .as_result(&format!("kill-window failed for window @{id}"))
             .map(|_| ())
     }
 
     pub fn create_session(name: &str) -> Result<()> {
-        let mut cmd = base_cmd();
-        let cmd = cmd.args(["new-session", "-d", "-s", name]);
-
-        //Logger::log(&format!("{:?}", cmd));
-        cmd.output()
+        base_cmd()
+            .args(["new-session", "-d", "-s", name])
+            .output()
             .as_result(&format!("new-session failed for session {name}"))
             .map(|_| ())
     }
 
     pub fn create_window(name: &str, id: &IdW, pos: &WindowPos) -> Result<()> {
-        let mut cmd = base_cmd();
-        let cmd = cmd.args([
-            "new-window",
-            "-d",
-            &pos.to_string(),
-            "-t",
-            &id.to_string(),
-            "-n",
-            name,
-        ]);
-
-        //Logger::log(&format!("{:?}", cmd));
-        cmd.output()
+        base_cmd()
+            .args([
+                "new-window",
+                "-d",
+                &pos.to_string(),
+                "-t",
+                &id.to_string(),
+                "-n",
+                name,
+            ])
+            .output()
             .as_result(&format!("new-window failed for window {name}"))
             .map(|_| ())
     }
