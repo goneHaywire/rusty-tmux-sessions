@@ -1,6 +1,35 @@
-use std::process::Command;
+use std::{
+    fmt::Display,
+    io,
+    process::{Command, Output},
+};
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Result};
+
+use crate::tui::logger::Logger;
+
+use super::windows::IdW;
+const SESSION_FORMAT: &str =
+    "#{#{session_id},#S,#{?session_attached,1,},#{session_last_attached},#{session_windows},#{session_created}}";
+
+const WINDOW_FORMAT: &str =
+    "#{#{window_id},#W,#{window_active},#{window_activity},#{window_panes}}";
+
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
+pub enum WindowPos {
+    Before,
+    #[default]
+    After,
+}
+
+impl Display for WindowPos {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            WindowPos::Before => "-b",
+            WindowPos::After => "-a",
+        })
+    }
+}
 
 fn base_cmd() -> Command {
     let cmd = "tmux";
@@ -11,102 +40,136 @@ fn error_decorator(message: &str) -> String {
     todo!();
 }
 
-pub struct TmuxCommand {}
+trait IoToAnyhowResult {
+    fn as_result(self, msg: &str) -> Result<Vec<u8>>;
+}
+
+impl IoToAnyhowResult for io::Result<Output> {
+    fn as_result(self, msg: &str) -> Result<Vec<u8>> {
+        match self {
+            Ok(output) => match output.status.success() {
+                true => anyhow::Result::Ok(output.stdout),
+                false => Err(anyhow!(msg.to_string())),
+            },
+            Err(_) => Err(anyhow!("command could not be run")),
+        }
+    }
+}
+
+pub struct TmuxCommand;
 
 impl TmuxCommand {
-    pub fn list_sessions() -> Result<Vec<u8>> {
-        let session_format = "#{#S,#{?session_attached,1,},#{session_last_attached},#{session_windows},#{session_created}}";
-
-        Ok(base_cmd()
-            .args(["list-sessions", "-F", session_format])
+    pub fn get_sessions() -> Result<Vec<u8>> {
+        base_cmd()
+            .args(["list-sessions", "-F", SESSION_FORMAT])
             .output()
-            .context("list-sessions command failed")?
-            .stdout)
+            .as_result("list-sessions command failed")
     }
 
-    pub fn list_windows(session_name: &str) -> Result<Vec<u8>> {
-        let window_format = "#{#W,#{?window_active,1,},#{window_activity},#{window_panes}}";
-
-        Ok(base_cmd()
-            .args(["list-windows", "-t", session_name, "-F", window_format])
+    pub fn get_windows(session_name: &str) -> Result<Vec<u8>> {
+        base_cmd()
+            .args(["list-windows", "-t", session_name, "-F", WINDOW_FORMAT])
             .output()
-            .with_context(|| format!("list-windows failed for session {}", session_name))?
-            .stdout)
+            .as_result(&format!("list-windows failed for session {session_name}",))
     }
 
-    pub fn rename_session(old_name: &str, new_name: &str) {
-        let _ = base_cmd()
+    pub fn get_session(name: &str) -> Result<Vec<u8>> {
+        base_cmd()
+            .args([
+                "list-sessions",
+                "-F",
+                SESSION_FORMAT,
+                "-f",
+                &format!("#{{m:{name},#S}}"),
+            ])
+            .output()
+            .as_result("get session command failed")
+    }
+
+    pub fn get_window(session_name: &str, id: &IdW) -> Result<Vec<u8>> {
+        base_cmd()
+            .args([
+                "list-windows",
+                "-F",
+                WINDOW_FORMAT,
+                "-f",
+                &format!("#{{==:{id},#{{window_id}}}}"),
+                "-t",
+                session_name,
+            ])
+            .output()
+            .as_result("get window command failed for window @{id}")
+    }
+
+    pub fn rename_session(old_name: &str, new_name: &str) -> Result<()> {
+        base_cmd()
             .args(["rename-session", "-t", old_name, new_name])
             .output()
-            .with_context(|| format!("rename-session failed for session {}", old_name));
+            .as_result(&format!("rename-session failed for session {old_name}",))
+            .map(|_| ())
     }
 
-    pub fn rename_window(session_name: &str, old_name: &str, new_name: &str) {
-        let _ = base_cmd()
-            .args([
-                "rename-window",
-                "-t",
-                format!("{}:{}", session_name, old_name,).as_str(),
-                new_name,
-            ])
+    pub fn rename_window(id: &IdW, new_name: &str) -> Result<()> {
+        base_cmd()
+            .args(["rename-window", "-t", &id.to_string(), new_name])
             .output()
-            .with_context(|| format!("rename-window failed for window {}", old_name));
+            .as_result(&format!("rename-window failed for window @{id}",))
+            .map(|_| ())
     }
 
-    pub fn attach_session(name: &str) {
-        let _ = base_cmd()
+    pub fn attach_session(name: &str) -> Result<()> {
+        base_cmd()
             .args(["switch-client", "-t", name])
             .output()
-            .with_context(|| format!("attach-session failed for session {}", name));
+            .as_result(&format!("attach-session failed for session {name}"))
+            .map(|_| ())
     }
 
-    pub fn attach_window(session_name: &str, name: &str) {
-        let _ = base_cmd()
-            .args([
-                "switch-client",
-                "-t",
-                format!("{}:{}", session_name, name).as_str(),
-            ])
+    pub fn attach_window(id: &IdW) -> Result<()> {
+        base_cmd()
+            .args(["switch-client", "-t", &id.to_string()])
             .output()
-            .with_context(|| format!("select-window failed for window {}", name));
+            .as_result(&format!("select-window failed for window @{id}",))
+            .map(|_| ())
     }
 
-    pub fn kill_session(name: &str) {
-        let _ = base_cmd()
+    pub fn kill_session(name: &str) -> Result<()> {
+        base_cmd()
             .args(["kill-session", "-t", name])
             .output()
-            .with_context(|| format!("kill-session failed for session {}", name));
+            .as_result(&format!("kill-session failed for session {name}",))
+            .map(|_| ())
     }
 
-    pub fn kill_window(session_name: &str, name: &str) {
-        let _ = base_cmd()
-            .args([
-                "kill-window",
-                "-t",
-                format!("{}:{}", session_name, name).as_str(),
-            ])
+    pub fn kill_window(id: &IdW) -> Result<()> {
+        base_cmd()
+            .args(["kill-window", "-t", &id.to_string()])
             .output()
-            .with_context(|| format!("kill-window failed for window {}", name));
+            .as_result(&format!("kill-window failed for window @{id}"))
+            .map(|_| ())
     }
 
-    pub fn create_session(name: &str) {
-        let _ = base_cmd()
+    pub fn create_session(name: &str) -> Result<()> {
+        base_cmd()
             .args(["new-session", "-d", "-s", name])
             .output()
-            .with_context(|| format!("new-session failed for session {}", name));
+            .as_result(&format!("new-session failed for session {name}"))
+            .map(|_| ())
     }
 
-    pub fn create_window(session_name: &str, current_window_name: &str, name: &str) {
-        let _ = base_cmd()
+    pub fn create_window(name: &str, id: &IdW, pos: &WindowPos) -> Result<()> {
+        base_cmd()
             .args([
                 "new-window",
-                "-a",
+                "-d",
+                &pos.to_string(),
+                "-t",
+                &id.to_string(),
                 "-n",
                 name,
-                "-t",
-                format!("{}:{}", session_name, current_window_name).as_str(),
             ])
             .output()
-            .with_context(|| format!("new-window failed for window {}", name));
+            .as_result(&format!("new-window failed for window {name}"))
+            .map(|_| ())
     }
 }

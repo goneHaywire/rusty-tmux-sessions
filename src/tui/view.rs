@@ -47,8 +47,8 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
             " ".into(),
         ],
 
-        Create(Sessions, _) => vec![" Enter new session name ".yellow()],
-        Create(Windows, _) => vec![" Enter new window name ".yellow()],
+        Create(Sessions, ..) => vec![" Enter new session name ".yellow()],
+        Create(Windows, ..) => vec![" Enter new window name ".yellow()],
 
         Delete(Sessions) => vec![
             " Window: ".into(),
@@ -81,7 +81,7 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         Delete(Sessions) => vec![" Press y to delete session or any other key to cancel ".red()],
         Delete(Windows) => vec![" Press y to delete window or any other key to cancel ".red()],
 
-        Rename(_, input) | Create(_, input) => vec![input.content.as_str().into()],
+        Rename(_, input) | Create(_, input, _) => vec![input.content.as_str().into()],
         _ => vec!["".into()],
     };
     let text = Text::from(Line::from(text));

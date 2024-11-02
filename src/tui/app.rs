@@ -1,175 +1,218 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::{
+    cmp,
     collections::HashMap,
     io,
-    sync::{Arc, Mutex},
-    thread::spawn,
+    sync::mpsc::{self, Receiver, Sender},
 };
 
 use crate::{
     tmux::{
         sessions::{Session, SessionService},
-        windows::{Window, WindowService},
+        tmux_command::WindowPos,
+        windows::{IdW, Window, WindowService},
     },
-    tui::{action::Actions, tmux_list::Selection, view},
+    tui::{action::Actions as A, tmux_list::Selection, view},
 };
 
 use super::{
     event::Events,
+    logger::Logger,
     mode::{Mode, Section, ToggleResult::*},
     tmux_list::StatefulList,
     tui::TUI,
 };
 
-#[derive(Default)]
 pub struct App {
-    // TODO: add the structs of other widgets
-    // since the App controls state, it will modify the state of each widget
-    // for ex. the scrolling of the lists will be handled by the structs of each list widget
-    // the App will handle the fetching of the data from tmux and persisting it
     pub session_list: StatefulList,
     pub window_list: StatefulList,
-    sessions: Arc<Mutex<HashMap<String, Session>>>,
-    windows: Arc<Mutex<HashMap<String, Vec<Window>>>>,
+    sessions: HashMap<String, Session>,
+    windows: HashMap<String, Vec<Window>>,
     pub mode: Mode,
+    atx: Sender<A<'static>>,
+    arx: Receiver<A<'static>>,
 }
 
 impl App {
-    fn load_sessions_list(&mut self) {
-        let clone = self.sessions.clone();
+    fn load_sessions(&mut self) {
+        self.sessions.clear();
+        let sessions = SessionService::get_all().unwrap();
 
-        spawn(move || {
-            let mut sessions = clone.lock().unwrap();
-            for sesh in SessionService::get_all().unwrap() {
-                sessions.insert(sesh.name.clone(), sesh);
-            }
-        })
-        .join()
-        .expect("can't join from sessions thread");
-
-        let sessions = self
-            .sessions
-            .clone()
-            .lock()
-            .unwrap()
-            .values()
-            .map(|s| s.name.clone())
-            .collect();
-        self.session_list = StatefulList::default().with_items(sessions);
-    }
-
-    fn load_window_list(&mut self) {
-        let selected_session = self.session_list.get_active_item();
-        let clone = self.windows.clone();
-
-        spawn(move || {
-            let mut windows = clone.lock().unwrap();
-            windows.insert(
-                selected_session.clone(),
-                WindowService::get_all(&selected_session).unwrap(),
-            )
-        })
-        .join()
-        .expect("can't join from windows thread");
-
-        let mutex = &self.windows.clone();
-        let windows = mutex.lock().unwrap();
-        let windows: Vec<String> = windows
-            .get(&self.session_list.get_active_item())
-            .unwrap()
-            .clone()
-            .into_iter()
-            .map(|w| w.name)
-            .collect();
-
-        self.window_list = StatefulList::default().with_items(windows);
-    }
-
-    fn toggle_is_renaming(&mut self) {
-        if let Toggled(mut mode) = self.mode.toggle_rename() {
-            self.mode = match mode {
-                Mode::Rename(Section::Sessions, ref mut _input) => {
-                    _input.set_content(&self.session_list.get_active_item());
-                    mode
-                }
-                Mode::Rename(Section::Windows, ref mut _input) => {
-                    _input.set_content(&self.session_list.get_active_item());
-                    mode
-                }
-                _ => mode,
-            };
+        for session in sessions {
+            self.sessions.insert(session.name.clone(), session);
         }
+    }
+
+    fn load_windows(&mut self) {
+        let session_name = self.session_list.get_active_item();
+        let windows = WindowService::get_all(&session_name).unwrap();
+
+        self.windows.insert(session_name.clone(), windows);
+    }
+
+    fn hydrate_session_list(&mut self) {
+        let mut sessions: Vec<Session> = self.sessions.values().cloned().collect();
+        sessions.sort_by_key(|s| s.last_attached);
+        sessions.reverse();
+        sessions.rotate_left(1);
+
+        let sessions = sessions.into_iter().map(|s| s.name).collect();
+        self.session_list.items(sessions);
+    }
+
+    fn hydrate_window_list(&mut self) {
+        let session_name = self.session_list.get_active_item();
+        let names = self
+            .windows
+            .get(&session_name)
+            .unwrap_or_else(|| panic!("can't find windows for session {}", session_name))
+            .iter()
+            .map(|w| w.name.clone())
+            .collect();
+        self.window_list.items(names);
     }
 
     fn attach_session(&mut self) {
         let current_session = self.session_list.get_active_item();
-        SessionService::attach(&current_session);
-        self.mode = self.mode.exit().unwrap();
+        if let Ok(mode) =
+            SessionService::attach(&current_session).and_then(|_| self.mode.exit().into())
+        {
+            self.mode = mode;
+        }
     }
 
     fn attach_window(&mut self) {
         let session = self.session_list.get_active_item();
-        let window = self.window_list.get_active_item();
+        let id = self.get_selected_window(&session).unwrap().id;
 
-        WindowService::attach(&session, &window);
-        self.mode = self.mode.exit().unwrap();
+        if let Ok(mode) = WindowService::attach(&id).and_then(|_| self.mode.exit().into()) {
+            self.mode = mode;
+        }
     }
 
     fn rename_session(&mut self, new_name: &str) {
         let old_name = self.session_list.get_active_item();
+        self.atx.send(A::ExitRename).unwrap();
 
-        SessionService::rename(&old_name, new_name);
-        self.load_sessions_list();
-        self.toggle_is_renaming();
+        if SessionService::rename(&old_name, new_name).is_ok() {
+            if let Ok(session) = SessionService::get_session(new_name) {
+                self.sessions
+                    .remove(&old_name)
+                    .expect("session should be stored");
+                self.sessions.insert(new_name.into(), session);
+
+                let sesh = self
+                    .windows
+                    .remove(&old_name)
+                    .expect("session should have windows");
+                self.windows.insert(new_name.into(), sesh);
+                self.hydrate_session_list();
+            }
+        };
     }
 
     fn rename_window(&mut self, new_name: &str) {
-        let session_name = self.session_list.get_active_item();
-        let old_name = self.window_list.get_active_item();
+        let session = self.session_list.get_active_item();
+        let id = self.get_selected_window(&session).unwrap().id;
+        self.atx.send(A::ExitRename).unwrap();
 
-        WindowService::rename(&session_name, &old_name, new_name);
-        self.load_window_list();
-        self.toggle_is_renaming();
+        if WindowService::rename(&id, new_name).is_ok() {
+            if let Ok(window) = WindowService::get_window(&session, &id) {
+                self.windows.entry(session).and_modify(|windows| {
+                    if let Some(index) = windows.iter().position(|w| w.id == id) {
+                        windows.push(window);
+                        windows.swap_remove(index);
+                    }
+                });
+                self.hydrate_window_list();
+            }
+        };
     }
 
-    fn create_window(&mut self, name: &str) {
-        let curr_window_name = self.window_list.get_active_item().clone();
+    fn create_window(&mut self, name: &str, pos: Option<WindowPos>) {
+        self.atx.send(A::ExitCreate).unwrap();
         let session = self.session_list.get_active_item();
-        self.toggle_is_adding();
+        let id = self.get_selected_window(&session).unwrap().id;
+        let pos = pos.unwrap_or_default();
 
-        WindowService::create(&session, &curr_window_name, name);
-        self.load_window_list();
+        if WindowService::create(name, &id, &pos).is_ok() {
+            let window = WindowService::get_last_created_window_id(&session)
+                .and_then(|id| WindowService::get_window(&session, &id))
+                .unwrap();
+
+            self.windows.entry(session).and_modify(|windows| {
+                let current_window = windows.iter().position(|w| w.id == id).unwrap();
+                let index = match pos {
+                    WindowPos::Before => current_window,
+                    WindowPos::After => cmp::min(current_window + 1, windows.len()),
+                };
+                windows.insert(index, window);
+            });
+            let action = match pos {
+                WindowPos::Before => A::Select(Section::Windows, Selection::Noop),
+                WindowPos::After => A::Select(Section::Windows, Selection::NextNoWrap),
+            };
+            self.atx.send(action).unwrap();
+        }
     }
 
     fn create_session(&mut self, name: &str) {
-        self.toggle_is_adding();
+        self.atx.send(A::ExitCreate).unwrap();
+        if SessionService::create(name).is_ok() {
+            let session = SessionService::get_session(name).unwrap();
+            self.sessions.insert(session.name.clone(), session);
 
-        SessionService::create(name);
-        self.load_sessions_list();
+            // TODO: consider switching to the created sessions
+            self.atx
+                .send(A::Select(Section::Sessions, Selection::NextNoWrap))
+                .unwrap();
+        }
     }
 
     fn kill_session(&mut self) {
+        self.atx.send(A::ExitDelete).unwrap();
         let session = self.session_list.get_active_item();
-        SessionService::kill(&session);
-        self.toggle_is_killing();
-        self.load_sessions_list();
+        if SessionService::kill(&session).is_ok() {
+            self.atx.send(A::RemoveSession(session)).unwrap();
+            self.atx
+                .send(A::Select(Section::Sessions, Selection::PrevNoWrap))
+                .unwrap();
+        }
+    }
+
+    fn remove_session(&mut self, session: &String) {
+        self.sessions.remove(session);
+        self.windows.remove(session);
+    }
+
+    fn remove_window(&mut self, session: String, id: &IdW) {
+        self.windows.entry(session.clone()).and_modify(|windows| {
+            windows.retain(|w| w.id != *id);
+        });
     }
 
     fn kill_window(&mut self) {
         let session = self.session_list.get_active_item();
-        let window = self.window_list.get_active_item();
-        WindowService::kill(&session, &window);
-        self.toggle_is_killing();
-        if self.window_list.items.len() == 1 {
-            self.load_sessions_list();
-            self.mode = self.mode.go_to_section(Section::Sessions);
+        let id = self.get_selected_window(&session).unwrap().id;
+        self.atx.send(A::ExitDelete).unwrap();
+
+        if self.windows.get(&session).unwrap().len() == 1 {
+            self.atx.send(A::EnterDelete).unwrap();
+            self.atx.send(A::ChangeSection(Section::Sessions)).unwrap();
+            self.atx.send(A::Kill(Section::Sessions)).unwrap();
+            return;
         }
-        self.load_window_list();
+        if WindowService::kill(&id).is_ok() {
+            self.atx.send(A::RemoveWindow(session, id)).unwrap();
+            self.atx
+                .send(A::Select(Section::Windows, Selection::PrevNoWrap))
+                .unwrap();
+        }
     }
 
     fn input_key(&mut self, key: KeyCode) {
         match &mut self.mode {
-            Mode::Create(_, ref mut input) => input.handle_key(key),
+            Mode::Create(_, ref mut input, _) => input.handle_key(key),
             Mode::Rename(_, ref mut input) => input.handle_key(key),
             _ => {}
         };
@@ -177,18 +220,53 @@ impl App {
 
     fn cancel_input(&mut self) {
         match &mut self.mode {
-            Mode::Create(_, ref mut input) => input.clear(),
+            Mode::Create(_, ref mut input, _) => input.clear(),
             Mode::Rename(_, ref mut input) => input.clear(),
             _ => {}
         }
     }
 
-    fn toggle_is_adding(&mut self) {
-        self.mode = self.mode.toggle_create().unwrap();
+    fn get_selected_window(&self, session: &String) -> Option<&Window> {
+        match self.window_list.state.selected() {
+            Some(index) => self.windows.get(session).unwrap().get(index),
+            None => None,
+        }
     }
 
-    fn toggle_is_killing(&mut self) {
-        self.mode = self.mode.toggle_delete().unwrap();
+    fn enter_rename(&mut self) {
+        if let Toggled(mut mode) = self.mode.enter_rename() {
+            self.mode = match mode {
+                Mode::Rename(Section::Sessions, ref mut input) => {
+                    input.set_content(&self.session_list.get_active_item());
+                    mode
+                }
+                Mode::Rename(Section::Windows, ref mut input) => {
+                    input.set_content(&self.window_list.get_active_item());
+                    mode
+                }
+                _ => mode,
+            };
+        }
+    }
+
+    fn enter_create(&mut self, pos: Option<WindowPos>) {
+        self.mode = self.mode.enter_create(pos).unwrap();
+    }
+
+    fn enter_delete(&mut self) {
+        self.mode = self.mode.enter_delete().unwrap();
+    }
+
+    fn exit_create(&mut self) {
+        self.mode = self.mode.exit_create().unwrap();
+    }
+
+    fn exit_rename(&mut self) {
+        self.mode = self.mode.exit_rename().unwrap();
+    }
+
+    fn exit_delete(&mut self) {
+        self.mode = self.mode.exit_delete().unwrap();
     }
 
     fn exit(&mut self) {
@@ -196,17 +274,34 @@ impl App {
     }
 }
 
+impl Default for App {
+    fn default() -> Self {
+        let (atx, arx) = mpsc::channel::<A>();
+        Self {
+            session_list: Default::default(),
+            window_list: Default::default(),
+            sessions: Default::default(),
+            windows: Default::default(),
+            mode: Default::default(),
+            atx,
+            arx,
+        }
+    }
+}
+
 impl App {
     pub fn run(&mut self, tui: &mut TUI) -> io::Result<()> {
         while !self.mode.should_exit() {
-            let state = self.mode.clone();
+            while let Ok(action) = self.arx.try_recv() {
+                self.handle_action(action);
+            }
+            let state = &self.mode.clone();
             let action = match tui.events.next() {
-                Events::Key(k) => App::handle_key_events(&state, k),
-                Events::Resize(_, _) | Events::Tick => Actions::Tick,
-                Events::Init => Actions::Init,
-                Events::Quit => Actions::Quit,
+                Events::Key(k) => App::handle_key_events(state, k),
+                Events::Resize(_, _) | Events::Tick => A::Tick,
+                Events::Init => A::Init,
+                Events::Quit => A::Quit,
             };
-            // TODO: in the future you can create a dedicated action channel to dispatch actions directly instead of only waiting for events to trigger them
             self.handle_action(action);
 
             // draw the screen
@@ -216,49 +311,37 @@ impl App {
         Ok(())
     }
 
-    fn handle_key_events(mode: &Mode, key: KeyEvent) -> Actions {
+    fn handle_key_events(mode: &Mode, key: KeyEvent) -> A {
         use KeyCode::Char;
         use Mode::*;
         use Section::*;
 
-        match (key, &mode) {
+        match (key, mode) {
             // renaming & creating
             (
                 KeyEvent {
                     code: Char(' '), ..
                 },
-                Rename(Sessions, input),
-            ) => Actions::RenameSession(&input.content),
+                Rename(section, input),
+            ) => A::Rename(*section, &input.content),
             (
                 KeyEvent {
                     code: Char(' '), ..
                 },
-                Rename(Windows, input),
-            ) => Actions::RenameWindow(&input.content),
-            (
-                KeyEvent {
-                    code: Char(' '), ..
-                },
-                Create(Sessions, input),
-            ) => Actions::CreateSession(&input.content),
-            (
-                KeyEvent {
-                    code: Char(' '), ..
-                },
-                Create(Windows, input),
-            ) => Actions::CreateWindow(&input.content),
+                Create(section, input, pos),
+            ) => A::Create(*section, &input.content, *pos),
             (
                 KeyEvent {
                     code: KeyCode::Esc, ..
                 },
                 Create(..),
-            ) => Actions::ToggleCreate,
+            ) => A::ExitCreate,
             (
                 KeyEvent {
                     code: KeyCode::Esc, ..
                 },
                 Rename(..),
-            ) => Actions::ToggleRename,
+            ) => A::ExitRename,
             (
                 KeyEvent {
                     code: Char('w'),
@@ -266,8 +349,8 @@ impl App {
                     ..
                 },
                 Rename(..) | Create(..),
-            ) => Actions::ClearInput,
-            (KeyEvent { code: key, .. }, Rename(..) | Create(..)) => Actions::InputKey(key),
+            ) => A::ClearInput,
+            (KeyEvent { code: key, .. }, Rename(..) | Create(..)) => A::InputKey(key),
 
             // deletion handlers
             (
@@ -275,58 +358,52 @@ impl App {
                     code: Char('d'), ..
                 },
                 _,
-            ) => Actions::ToggleDelete,
+            ) => A::EnterDelete,
             (
                 KeyEvent {
                     code: Char('y'), ..
                 },
-                Delete(Sessions),
-            ) => Actions::KillSession,
-            (
-                KeyEvent {
-                    code: Char('y'), ..
-                },
-                Delete(Windows),
-            ) => Actions::KillWindow,
-            (_, Delete(_)) => Actions::ToggleDelete,
+                Delete(section),
+            ) => A::Kill(*section),
+            (_, Delete(_)) => A::ExitDelete,
 
             // selection handlers for sessions
             (
                 KeyEvent {
                     code: Char('j'), ..
                 },
-                Select(Sessions),
-            ) => Actions::SelectSession(Selection::Next),
+                Select(section),
+            ) => A::Select(*section, Selection::Next),
             (
                 KeyEvent {
                     code: Char('k'), ..
                 },
-                Select(Sessions),
-            ) => Actions::SelectSession(Selection::Prev),
+                Select(section),
+            ) => A::Select(*section, Selection::Prev),
             (
                 KeyEvent {
                     code: Char('g'), ..
                 },
-                Select(Sessions),
-            ) => Actions::SelectSession(Selection::First),
+                Select(section),
+            ) => A::Select(*section, Selection::First),
             (
                 KeyEvent {
                     code: Char('G'), ..
                 },
-                Select(Sessions),
-            ) => Actions::SelectSession(Selection::Last),
+                Select(section),
+            ) => A::Select(*section, Selection::Last),
             (
                 KeyEvent {
                     code: Char('l'), ..
                 },
                 Select(Sessions),
-            ) => Actions::ChangeSection(Windows),
+            ) => A::ChangeSection(Windows),
             (
                 KeyEvent {
                     code: Char('H'), ..
                 },
                 Select(Sessions),
-            ) => Actions::ToggleHidden,
+            ) => A::ToggleHidden,
             (
                 KeyEvent {
                     code: Char(' '), ..
@@ -336,39 +413,15 @@ impl App {
                     ..
                 },
                 Select(Sessions),
-            ) => Actions::AttachSession,
+            ) => A::AttachSession,
 
             // selection handlers for windows
-            (
-                KeyEvent {
-                    code: Char('j'), ..
-                },
-                Select(Windows),
-            ) => Actions::SelectWindow(Selection::Next),
-            (
-                KeyEvent {
-                    code: Char('k'), ..
-                },
-                Select(Windows),
-            ) => Actions::SelectWindow(Selection::Prev),
-            (
-                KeyEvent {
-                    code: Char('g'), ..
-                },
-                Select(Windows),
-            ) => Actions::SelectWindow(Selection::First),
-            (
-                KeyEvent {
-                    code: Char('G'), ..
-                },
-                Select(Windows),
-            ) => Actions::SelectWindow(Selection::Last),
             (
                 KeyEvent {
                     code: Char('h'), ..
                 },
                 Select(Windows),
-            ) => Actions::ChangeSection(Sessions),
+            ) => A::ChangeSection(Sessions),
             (
                 KeyEvent {
                     code: Char(' '), ..
@@ -378,20 +431,32 @@ impl App {
                     ..
                 },
                 Select(Windows),
-            ) => Actions::AttachWindow,
+            ) => A::AttachWindow,
 
             (
                 KeyEvent {
-                    code: Char('a'), ..
+                    code: Char('o'), ..
                 },
-                Select(_),
-            ) => Actions::ToggleCreate,
+                Select(Sessions),
+            ) => A::EnterCreate(None),
+            (
+                KeyEvent {
+                    code: Char('o'), ..
+                },
+                Select(Windows),
+            ) => A::EnterCreate(Some(WindowPos::After)),
+            (
+                KeyEvent {
+                    code: Char('O'), ..
+                },
+                Select(Windows),
+            ) => A::EnterCreate(Some(WindowPos::Before)),
             (
                 KeyEvent {
                     code: Char('c'), ..
                 },
                 Select(_),
-            ) => Actions::ToggleRename,
+            ) => A::EnterRename,
 
             (
                 KeyEvent {
@@ -401,41 +466,58 @@ impl App {
                     code: KeyCode::Esc, ..
                 },
                 _,
-            ) => Actions::Quit,
-            _ => Actions::Tick,
+            ) => A::Quit,
+            _ => A::Tick,
         }
     }
 
-    fn handle_action(&mut self, action: Actions) {
-        use Actions::*;
+    fn handle_action(&mut self, action: A) {
+        use A::*;
 
         match action {
             Tick => {}
             Init => {
-                self.load_sessions_list();
-                self.load_window_list();
+                self.load_sessions();
+                self.hydrate_session_list();
+                self.load_windows();
+                self.hydrate_window_list();
             }
             Quit => self.exit(),
-            LoadSessions => self.load_sessions_list(),
-            LoadWindows => self.load_window_list(),
-            CreateSession(name) => self.create_session(name),
-            CreateWindow(name) => self.create_window(name),
-            SelectSession(selection) => {
-                self.session_list.select(selection);
-                self.load_window_list();
+            LoadSessions => self.load_sessions(),
+            LoadWindows => self.load_windows(),
+            Create(Section::Sessions, name, _) => self.create_session(name),
+            Create(Section::Windows, name, pos) => self.create_window(name, pos),
+            Select(Section::Sessions, selection) => {
+                if self.sessions.len() > 1 {
+                    self.hydrate_session_list();
+                    let session = self.session_list.select(selection);
+                    if !self.windows.contains_key(&session) {
+                        self.load_windows();
+                    }
+                    self.hydrate_window_list();
+                    self.window_list.select(Selection::Index(Some(0)));
+                }
             }
-            SelectWindow(selection) => self.window_list.select(selection),
-            KillSession => self.kill_session(),
-            KillWindow => self.kill_window(),
-            RenameSession(name) => self.rename_session(name),
-            RenameWindow(name) => self.rename_window(name),
+            Select(Section::Windows, selection) => {
+                self.hydrate_window_list();
+                self.window_list.select(selection);
+            }
+            Kill(Section::Sessions) => self.kill_session(),
+            Kill(Section::Windows) => self.kill_window(),
+            RemoveSession(session) => self.remove_session(&session),
+            RemoveWindow(window, id) => self.remove_window(window, &id),
+            Rename(Section::Sessions, name) => self.rename_session(name),
+            Rename(Section::Windows, name) => self.rename_window(name),
             ToggleHelp => todo!(),
-            ChangeSection(section) => self.mode = self.mode.go_to_section(section),
+            ChangeSection(section) => self.mode = self.mode.change_section(section),
             ClearInput => self.cancel_input(),
             InputKey(key) => self.input_key(key),
-            ToggleCreate => self.toggle_is_adding(),
-            ToggleRename => self.toggle_is_renaming(),
-            ToggleDelete => self.toggle_is_killing(),
+            EnterCreate(pos) => self.enter_create(pos),
+            EnterRename => self.enter_rename(),
+            EnterDelete => self.enter_delete(),
+            ExitCreate => self.exit_create(),
+            ExitRename => self.exit_rename(),
+            ExitDelete => self.exit_delete(),
             ToggleHidden => todo!(),
             AttachSession => self.attach_session(),
             AttachWindow => self.attach_window(),

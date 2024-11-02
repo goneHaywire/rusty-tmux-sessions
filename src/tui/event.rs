@@ -35,7 +35,7 @@ impl EventHandler {
     }
 
     pub fn next(&mut self) -> Events {
-        self.rx.recv().ok().unwrap_or(Events::Tick)
+        self.rx.try_recv().ok().unwrap_or(Events::Tick)
     }
 }
 

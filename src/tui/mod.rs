@@ -1,4 +1,5 @@
 pub mod app;
+pub mod logger;
 pub mod mode;
 pub mod input;
 pub mod tmux_list;

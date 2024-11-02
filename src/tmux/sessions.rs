@@ -1,34 +1,21 @@
 use std::{
     fmt::Debug,
     str::{self, FromStr},
-    usize,
 };
 
 use anyhow::{Context, Error, Result};
 
 use super::{tmux::TmuxEntity, tmux_command::TmuxCommand};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Session {
+    pub id: usize,
     pub name: String,
     is_attached: bool,
-    last_attached: Option<u64>,
+    pub last_attached: Option<u64>,
     created_at: u64,
     windows_count: usize,
     is_hidden: bool,
-}
-
-impl Default for Session {
-    fn default() -> Self {
-        Self {
-            name: Default::default(),
-            is_attached: false,
-            last_attached: Default::default(),
-            created_at: Default::default(),
-            windows_count: 0,
-            is_hidden: false,
-        }
-    }
 }
 
 impl Session {
@@ -48,18 +35,19 @@ impl FromStr for Session {
 
         assert_eq!(
             parts.len(),
-            5,
-            "should be 5 parts in list-sessions format str"
+            6,
+            "should be 6 parts in list-sessions format str"
         );
 
         let session = Session {
-            name: parts[0].into(),
-            is_attached: parts[1] == "1",
-            last_attached: parts[2].parse::<u64>().ok(),
-            windows_count: parts[3]
+            id: parts[0].trim_start_matches('$').parse().unwrap(),
+            name: parts[1].into(),
+            is_attached: parts[2] == "1",
+            last_attached: parts[3].parse::<u64>().ok(),
+            windows_count: parts[4]
                 .parse()
                 .context("error parsing session windows_count")?,
-            created_at: parts[4]
+            created_at: parts[5]
                 .parse()
                 .context("error parsing session created_at")?,
             is_hidden: false,
@@ -72,7 +60,7 @@ pub struct SessionService;
 
 impl SessionService {
     pub fn get_all() -> Result<Vec<Session>> {
-        let sessions = TmuxCommand::list_sessions()?;
+        let sessions = TmuxCommand::get_sessions()?;
 
         str::from_utf8(&sessions)
             .context("error parsing list-sessions output")?
@@ -82,32 +70,36 @@ impl SessionService {
             .collect()
     }
 
-    pub fn create(name: &str) {
-        let _ = TmuxCommand::create_session(name);
-        //let sessions = Self::get_all("")?
-        //    .iter()
-        //    .find(|session| session.name == name)
-        //    .expect("the newly created session should be found");
-        //let session = Session::default().with_name(name);
+    pub fn get_session(name: &str) -> Result<Session> {
+        let session = TmuxCommand::get_session(name)?;
+
+        str::from_utf8(&session)
+            .context("error parsing get session output")
+            .map(|s| s.trim())
+            .and_then(Session::from_str)
     }
 
-    pub fn kill(name: &str) {
-        TmuxCommand::kill_session(name);
+    pub fn create(name: &str) -> Result<()> {
+        TmuxCommand::create_session(name)
     }
 
-    pub fn rename(old_name: &str, new_name: &str) {
-        TmuxCommand::rename_session(old_name, new_name);
+    pub fn kill(name: &str) -> Result<()> {
+        TmuxCommand::kill_session(name)
     }
 
-    pub fn attach(name: &str) {
-        TmuxCommand::attach_session(name);
+    pub fn rename(old_name: &str, new_name: &str) -> Result<()> {
+        TmuxCommand::rename_session(old_name, new_name)
     }
 
-    pub fn hide(name: &str) {
-        todo!();
+    pub fn attach(name: &str) -> Result<()> {
+        TmuxCommand::attach_session(name)
     }
 
-    pub fn show(name: &str) {
-        todo!();
+    pub fn hide(name: &str) -> Result<()> {
+        todo!()
+    }
+
+    pub fn show(name: &str) -> Result<()> {
+        todo!()
     }
 }

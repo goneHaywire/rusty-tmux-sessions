@@ -3,10 +3,14 @@ use std::ops::Index;
 use ratatui::widgets::ListState;
 
 pub enum Selection {
+    Index(Option<usize>),
+    NextNoWrap,
+    PrevNoWrap,
     Next,
     Prev,
     First,
     Last,
+    Noop,
 }
 
 /// Wrapper for a stateful TUI list
@@ -14,6 +18,7 @@ pub enum Selection {
 /// * `items`: Vector of Sessions or Windows
 /// * `state`: ListState
 /// * `show_hidden`: Whether to show hidden items or not
+#[derive(Debug)]
 pub struct StatefulList {
     pub items: Vec<String>,
     pub state: ListState,
@@ -31,9 +36,14 @@ impl Default for StatefulList {
 }
 
 impl StatefulList {
-    pub fn with_items(mut self, items: Vec<String>) -> Self {
+    pub fn with_items(items: Vec<String>) -> Self {
+        let mut list = Self::default();
+        list.items(items);
+        list
+    }
+
+    pub fn items(&mut self, items: Vec<String>) {
         self.items = items;
-        self
     }
 
     /// show or hide hidden items
@@ -53,7 +63,7 @@ impl StatefulList {
     /// selection function that handles 4 different cases
     ///
     /// * `selection`: Selection
-    pub fn select(&mut self, selection: Selection) {
+    pub fn select(&mut self, selection: Selection) -> String {
         use Selection::*;
         let last_index = self.items.len() - 1;
         let current = self.state.selected().expect("invalid selection");
@@ -65,6 +75,11 @@ impl StatefulList {
             Next => self.state.select_next(),
             Prev if current == 0 => self.state.select(Some(last_index)),
             Prev => self.state.select_previous(),
+            Index(index) => self.state.select(index),
+            NextNoWrap => self.state.select_next(),
+            PrevNoWrap => self.state.select_previous(),
+            Noop => (),
         }
+        self.get_active_item()
     }
 }
