@@ -13,7 +13,7 @@ pub struct Session {
     pub name: String,
     is_attached: bool,
     pub last_attached: Option<u64>,
-    created_at: u64,
+    pub created_at: u64,
     windows_count: usize,
     is_hidden: bool,
 }
