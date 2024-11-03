@@ -10,10 +10,10 @@ use crate::tui::logger::Logger;
 
 use super::windows::IdW;
 const SESSION_FORMAT: &str =
-    "#{#{session_id},#S,#{?session_attached,1,},#{session_last_attached},#{session_windows},#{session_created}}";
+    "#{#{session_id},#S,#{?session_attached,1,},#{session_activity},#{session_windows},#{session_created}}";
 
 const WINDOW_FORMAT: &str =
-    "#{#{window_id},#W,#{window_active},#{window_activity},#{window_panes}}";
+    "#{#{window_id},#W,#{window_active},#{window_activity},#{window_panes},#{pane_current_command}}";
 
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub enum WindowPos {

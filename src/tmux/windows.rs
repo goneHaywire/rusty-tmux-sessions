@@ -39,8 +39,9 @@ pub struct Window {
     pub id: IdW,
     pub name: String,
     is_active: bool,
-    last_active: u64,
-    panes_count: usize,
+    pub last_active: u64,
+    pub panes_count: usize,
+    pub current_command: Option<String>,
 }
 
 impl TmuxEntity for Window {}
@@ -53,8 +54,8 @@ impl FromStr for Window {
 
         assert_eq!(
             parts.len(),
-            5,
-            "should be 5 parts in list-windows format str"
+            6,
+            "should be 6 parts in list-windows format str"
         );
 
         Ok(Window {
@@ -67,6 +68,11 @@ impl FromStr for Window {
             panes_count: parts[4]
                 .parse()
                 .context("error parsing window panes_count")?,
+            current_command: if parts[5].is_empty() {
+                None
+            } else {
+                Some(parts[5].into())
+            },
         })
     }
 }
@@ -139,7 +145,7 @@ impl WindowService {
 
 #[test]
 fn from_str() {
-    let window_str = "@42,test_window,1,1722892534,4";
+    let window_str = "@42,test_window,1,1722892534,4,cargo";
     let window = Window::from_str(window_str).unwrap();
 
     assert_eq!(IdW::from(42), window.id);
@@ -147,4 +153,5 @@ fn from_str() {
     assert!(window.is_active);
     assert_eq!(1722892534, window.last_active);
     assert_eq!(4, window.panes_count);
+    assert_eq!("cargo".to_string(), window.current_command.unwrap());
 }

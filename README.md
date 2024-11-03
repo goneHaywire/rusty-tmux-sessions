@@ -12,17 +12,23 @@ todo!
 - [X] refactor tmux commands to work for both sessions & windows
 - [X] refactor app central state
 - [X] implement session sorting
-- [ ] display session/window details
+- [X] display session/window details
 - [ ] send commands to windows
-- [ ] document code
+- [ ] send keypresses
+- [ ] command history?
+- [ ] hide/show sessions
 - [ ] toggle hidden in TUI
-- [ ] add logger for debugging
+- [ ] get it working without initial sessions
 - [ ] visual mode selection (batch actions)
+- [ ] compound operations (numbered navigation, swapping, merging?)
+- [ ] searching
+- [ ] help popup
+- [ ] document code
+- [ ] add logger for debugging
 - [ ] styling
 - [ ] add tests
 - [ ] rafactor to tokio
 - [ ] possible groups integration (multiple session groups)
-- [ ] hide/show sessions
 - [ ] pin sessions
 - [ ] reorder sessions/windows
 

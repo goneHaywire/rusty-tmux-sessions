@@ -50,6 +50,21 @@ impl App {
         self.windows.insert(session_name.clone(), windows);
     }
 
+    pub fn get_active_session(&self) -> Option<&Session> {
+        let active_item = self.session_list.get_active_item();
+        self.sessions.get(&active_item)
+    }
+
+    pub fn get_active_window(&self) -> Option<&Window> {
+        let session = self.session_list.get_active_item();
+        let id = self.get_selected_window(&session).unwrap().id;
+        self.windows
+            .get(&session)
+            .unwrap()
+            .iter()
+            .find(|w| w.id == id)
+    }
+
     fn hydrate_session_list(&mut self) {
         let mut sessions: Vec<Session> = self.sessions.values().cloned().collect();
         sessions.sort_by_key(|s| s.last_attached);
