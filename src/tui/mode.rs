@@ -17,6 +17,7 @@ pub enum Mode {
     Create(Section, InputState, Option<WindowPos>),
     Delete(Section),
     Rename(Section, InputState),
+    SendCommand(InputState),
     Help,
     Exit,
 }
@@ -96,6 +97,13 @@ impl Mode {
         }
     }
 
+    pub fn enter_send_command(&self) -> ToggleResult {
+        match self {
+            Self::Select(Windows) => Toggled(Self::SendCommand(InputState::default())),
+            m => NotToggled(m.clone()),
+        }
+    }
+
     pub fn exit_create(&self) -> ToggleResult {
         match self {
             Self::Create(s, ..) => Toggled(Self::Select(*s)),
@@ -113,6 +121,13 @@ impl Mode {
     pub fn exit_rename(&self) -> ToggleResult {
         match self {
             Self::Rename(s, _) => Toggled(Self::Select(*s)),
+            v => NotToggled(v.clone()),
+        }
+    }
+
+    pub fn exit_send_command(&self) -> ToggleResult {
+        match self {
+            Self::SendCommand(_) => Toggled(Self::Select(Section::Windows)),
             v => NotToggled(v.clone()),
         }
     }

@@ -9,7 +9,7 @@ use std::{
 use crate::{
     tmux::{
         sessions::{Session, SessionService},
-        tmux_command::WindowPos,
+        tmux_command::{KeysKind, WindowPos},
         windows::{IdW, Window, WindowService},
     },
     tui::{action::Actions as A, tmux_list::Selection, view},
@@ -225,10 +225,24 @@ impl App {
         }
     }
 
+    fn send_command(&self, command: String) {
+        let session = self.session_list.get_active_item();
+        let id = self.get_selected_window(&session).unwrap().id;
+        self.atx.send(A::ExitSendCommand).unwrap();
+
+        //TODO: reload the window to get the new running cmd
+        if WindowService::send_keys(&id, KeysKind::Command(command.as_bytes())).is_ok() {
+            self.atx
+                .send(A::Select(Section::Windows, Selection::Noop))
+                .unwrap();
+        }
+    }
+
     fn input_key(&mut self, key: KeyCode) {
         match &mut self.mode {
-            Mode::Create(_, ref mut input, _) => input.handle_key(key),
-            Mode::Rename(_, ref mut input) => input.handle_key(key),
+            Mode::Create(_, ref mut input, _)
+            | Mode::Rename(_, ref mut input)
+            | Mode::SendCommand(ref mut input) => input.handle_key(key),
             _ => {}
         };
     }
@@ -286,6 +300,14 @@ impl App {
 
     fn exit(&mut self) {
         self.mode = self.mode.exit().unwrap();
+    }
+
+    fn enter_send_command(&mut self) {
+        self.mode = self.mode.enter_send_command().unwrap();
+    }
+
+    fn exit_send_command(&mut self) {
+        self.mode = self.mode.exit_send_command().unwrap();
     }
 }
 
@@ -347,6 +369,13 @@ impl App {
             ) => A::Create(*section, &input.content, *pos),
             (
                 KeyEvent {
+                    code: KeyCode::Enter,
+                    ..
+                },
+                SendCommand(input),
+            ) => A::SendCommand(input.content.clone()),
+            (
+                KeyEvent {
                     code: KeyCode::Esc, ..
                 },
                 Create(..),
@@ -359,13 +388,21 @@ impl App {
             ) => A::ExitRename,
             (
                 KeyEvent {
+                    code: KeyCode::Esc, ..
+                },
+                SendCommand(_),
+            ) => A::ExitSendCommand,
+            (
+                KeyEvent {
                     code: Char('w'),
                     modifiers: KeyModifiers::CONTROL,
                     ..
                 },
-                Rename(..) | Create(..),
+                Rename(..) | Create(..) | SendCommand(..),
             ) => A::ClearInput,
-            (KeyEvent { code: key, .. }, Rename(..) | Create(..)) => A::InputKey(key),
+            (KeyEvent { code: key, .. }, Rename(..) | Create(..) | SendCommand(..)) => {
+                A::InputKey(key)
+            }
 
             // deletion handlers
             (
@@ -472,6 +509,12 @@ impl App {
                 },
                 Select(_),
             ) => A::EnterRename,
+            (
+                KeyEvent {
+                    code: Char('s'), ..
+                },
+                Select(Windows),
+            ) => A::EnterSendCommand,
 
             (
                 KeyEvent {
@@ -523,6 +566,7 @@ impl App {
             RemoveWindow(window, id) => self.remove_window(window, &id),
             Rename(Section::Sessions, name) => self.rename_session(name),
             Rename(Section::Windows, name) => self.rename_window(name),
+            SendCommand(command) => self.send_command(command),
             ToggleHelp => todo!(),
             ChangeSection(section) => self.mode = self.mode.change_section(section),
             ClearInput => self.cancel_input(),
@@ -530,9 +574,11 @@ impl App {
             EnterCreate(pos) => self.enter_create(pos),
             EnterRename => self.enter_rename(),
             EnterDelete => self.enter_delete(),
+            EnterSendCommand => self.enter_send_command(),
             ExitCreate => self.exit_create(),
             ExitRename => self.exit_rename(),
             ExitDelete => self.exit_delete(),
+            ExitSendCommand => self.exit_send_command(),
             ToggleHidden => todo!(),
             AttachSession => self.attach_session(),
             AttachWindow => self.attach_window(),

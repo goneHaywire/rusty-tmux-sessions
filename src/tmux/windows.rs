@@ -1,5 +1,7 @@
-use core::str;
-use std::{fmt::Display, str::FromStr};
+use std::{
+    fmt::Display,
+    str::{self, FromStr},
+};
 
 use anyhow::{Context, Error, Result};
 
@@ -7,7 +9,7 @@ use crate::tui::logger::Logger;
 
 use super::{
     tmux::TmuxEntity,
-    tmux_command::{TmuxCommand, WindowPos},
+    tmux_command::{KeysKind, TmuxCommand, WindowPos},
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, PartialOrd, Ord)]
@@ -132,6 +134,10 @@ impl WindowService {
 
     pub fn attach(id: &IdW) -> Result<()> {
         TmuxCommand::attach_window(id)
+    }
+
+    pub fn send_keys(id: &IdW, keys: KeysKind) -> Result<()> {
+        TmuxCommand::send_keys(id, keys)
     }
 
     fn show(name: &str) -> Result<()> {

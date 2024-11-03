@@ -39,7 +39,7 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         Select(Sessions) | Delete(Sessions) | Rename(Sessions, _) => {
             Some(app.session_list.get_active_item())
         }
-        Select(Windows) | Delete(Windows) | Rename(Windows, _) => {
+        Select(Windows) | Delete(Windows) | Rename(Windows, _) | SendCommand(_) => {
             Some(app.window_list.get_active_item())
         }
         _ => None,
@@ -87,6 +87,11 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
             active_item.expect("should have a selected item").magenta(),
             " ".into(),
         ],
+        SendCommand(_) => vec![
+            " Send command to window ".into(),
+            active_item.expect("window should be selected").magenta(),
+            " ".into(),
+        ],
         _ => vec!["".into()],
     };
     let title = Title::from(Line::from(title));
@@ -102,14 +107,14 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
                     .unwrap_or("never".into()),
             )
         }
-        Select(Windows) | Delete(Windows) | Rename(Windows, _) => {
+        Select(Windows) | Delete(Windows) | Rename(Windows, _) | SendCommand(_) => {
             let window = app.get_active_window().unwrap();
             Some(humanize_time(window.last_active))
         }
         _ => None,
     }
     .map(|right_title| match app.mode {
-        Select(..) | Rename(..) => Line::from(vec![
+        Select(..) | Rename(..) | SendCommand(..) => Line::from(vec![
             " active ".into(),
             right_title.bold().green(),
             " ".into(),
@@ -151,7 +156,9 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         }
         Delete(Windows) => vec!["Press y to delete window or any other key to cancel".red()],
 
-        Rename(_, ref input) | Create(_, ref input, _) => vec![input.content.clone().into()],
+        Rename(_, ref input) | Create(_, ref input, _) | SendCommand(ref input) => {
+            vec![input.content.clone().into()]
+        }
         _ => vec!["".into()],
     };
     let content = Paragraph::new(Text::from(Line::from(content)));

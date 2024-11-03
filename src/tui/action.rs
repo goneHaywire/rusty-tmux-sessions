@@ -22,6 +22,7 @@ pub enum Actions<'a> {
     RemoveSession(String),
     RemoveWindow(String, IdW),
     Rename(Section, &'a str),
+    SendCommand(String),
 
     // mode switching
     EnterCreate(Option<WindowPos>),
@@ -31,6 +32,8 @@ pub enum Actions<'a> {
     EnterDelete,
     ExitDelete,
     ToggleHelp,
+    EnterSendCommand,
+    ExitSendCommand,
 
     ChangeSection(Section),
     ToggleHidden,

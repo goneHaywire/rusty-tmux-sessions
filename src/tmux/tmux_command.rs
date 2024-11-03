@@ -1,3 +1,4 @@
+use core::str;
 use std::{
     fmt::Display,
     io,
@@ -14,6 +15,11 @@ const SESSION_FORMAT: &str =
 
 const WINDOW_FORMAT: &str =
     "#{#{window_id},#W,#{window_active},#{window_activity},#{window_panes},#{pane_current_command}}";
+
+pub enum KeysKind<'a> {
+    Command(&'a [u8]),
+    Keys(&'a [u8]),
+}
 
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub enum WindowPos {
@@ -170,6 +176,20 @@ impl TmuxCommand {
             ])
             .output()
             .as_result(&format!("new-window failed for window {name}"))
+            .map(|_| ())
+    }
+
+    pub fn send_keys(window_id: &IdW, keys: KeysKind) -> Result<()> {
+        let mut cmd = base_cmd();
+        let cmd = cmd.args(["send-keys", "-t", &window_id.to_string()]);
+
+        let cmd = match keys {
+            KeysKind::Command(keys) => cmd.args([str::from_utf8(keys).unwrap(), "Enter"]),
+            KeysKind::Keys(keys) => cmd.arg(str::from_utf8(keys).unwrap()),
+        };
+
+        cmd.output()
+            .as_result(&format!("send-keys failed for keys {:?}", ()))
             .map(|_| ())
     }
 }
