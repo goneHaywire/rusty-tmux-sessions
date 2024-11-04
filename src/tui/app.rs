@@ -9,7 +9,7 @@ use std::{
 use crate::{
     tmux::{
         sessions::{Session, SessionService},
-        tmux_command::{KeysKind, WindowPos},
+        tmux_command::WindowPos,
         windows::{IdW, Window, WindowService},
     },
     tui::{action::Actions as A, tmux_list::Selection, view},
@@ -18,7 +18,7 @@ use crate::{
 use super::{
     event::Events,
     logger::Logger,
-    mode::{Mode, Section, ToggleResult::*},
+    mode::{CommandKind, Mode, Section, ToggleResult::*},
     tmux_list::StatefulList,
     tui::TUI,
 };
@@ -225,13 +225,14 @@ impl App {
         }
     }
 
-    fn send_command(&self, command: String) {
+    fn send_command(&self, kind: CommandKind, command: String) {
         let session = self.session_list.get_active_item();
         let id = self.get_selected_window(&session).unwrap().id;
         self.atx.send(A::ExitSendCommand).unwrap();
 
         //TODO: reload the window to get the new running cmd
-        if WindowService::send_keys(&id, KeysKind::Command(command.as_bytes())).is_ok() {
+        //TODO: handle both programs & individual keys
+        if WindowService::send_keys(&id, command.as_bytes(), CommandKind::Program).is_ok() {
             self.atx
                 .send(A::Select(Section::Windows, Selection::Noop))
                 .unwrap();
@@ -242,7 +243,7 @@ impl App {
         match &mut self.mode {
             Mode::Create(_, ref mut input, _)
             | Mode::Rename(_, ref mut input)
-            | Mode::SendCommand(ref mut input) => input.handle_key(key),
+            | Mode::SendCommand(_, ref mut input) => input.handle_key(key),
             _ => {}
         };
     }
@@ -372,8 +373,8 @@ impl App {
                     code: KeyCode::Enter,
                     ..
                 },
-                SendCommand(input),
-            ) => A::SendCommand(input.content.clone()),
+                SendCommand(k, input),
+            ) => A::SendCommand(*k, input.content.clone()),
             (
                 KeyEvent {
                     code: KeyCode::Esc, ..
@@ -390,7 +391,7 @@ impl App {
                 KeyEvent {
                     code: KeyCode::Esc, ..
                 },
-                SendCommand(_),
+                SendCommand(..),
             ) => A::ExitSendCommand,
             (
                 KeyEvent {
@@ -566,7 +567,7 @@ impl App {
             RemoveWindow(window, id) => self.remove_window(window, &id),
             Rename(Section::Sessions, name) => self.rename_session(name),
             Rename(Section::Windows, name) => self.rename_window(name),
-            SendCommand(command) => self.send_command(command),
+            SendCommand(kind, command) => self.send_command(kind, command),
             ToggleHelp => todo!(),
             ChangeSection(section) => self.mode = self.mode.change_section(section),
             ClearInput => self.cancel_input(),

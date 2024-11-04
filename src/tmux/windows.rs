@@ -5,11 +5,11 @@ use std::{
 
 use anyhow::{Context, Error, Result};
 
-use crate::tui::logger::Logger;
+use crate::tui::{logger::Logger, mode::CommandKind};
 
 use super::{
     tmux::TmuxEntity,
-    tmux_command::{KeysKind, TmuxCommand, WindowPos},
+    tmux_command::{TmuxCommand, WindowPos},
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, PartialOrd, Ord)]
@@ -136,8 +136,8 @@ impl WindowService {
         TmuxCommand::attach_window(id)
     }
 
-    pub fn send_keys(id: &IdW, keys: KeysKind) -> Result<()> {
-        TmuxCommand::send_keys(id, keys)
+    pub fn send_keys(id: &IdW, keys: &[u8], kind: CommandKind) -> Result<()> {
+        TmuxCommand::send_keys(id, keys, kind)
     }
 
     fn show(name: &str) -> Result<()> {

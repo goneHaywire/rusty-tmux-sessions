@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{anyhow, Result};
 
-use crate::tui::logger::Logger;
+use crate::tui::{logger::Logger, mode::CommandKind};
 
 use super::windows::IdW;
 const SESSION_FORMAT: &str =
@@ -15,11 +15,6 @@ const SESSION_FORMAT: &str =
 
 const WINDOW_FORMAT: &str =
     "#{#{window_id},#W,#{window_active},#{window_activity},#{window_panes},#{pane_current_command}}";
-
-pub enum KeysKind<'a> {
-    Command(&'a [u8]),
-    Keys(&'a [u8]),
-}
 
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub enum WindowPos {
@@ -179,13 +174,13 @@ impl TmuxCommand {
             .map(|_| ())
     }
 
-    pub fn send_keys(window_id: &IdW, keys: KeysKind) -> Result<()> {
+    pub fn send_keys(window_id: &IdW, keys: &[u8], kind: CommandKind) -> Result<()> {
         let mut cmd = base_cmd();
         let cmd = cmd.args(["send-keys", "-t", &window_id.to_string()]);
 
-        let cmd = match keys {
-            KeysKind::Command(keys) => cmd.args([str::from_utf8(keys).unwrap(), "Enter"]),
-            KeysKind::Keys(keys) => cmd.arg(str::from_utf8(keys).unwrap()),
+        let cmd = match kind {
+            CommandKind::Program => cmd.args([str::from_utf8(keys).unwrap(), "Enter"]),
+            CommandKind::Keys => cmd.arg(str::from_utf8(keys).unwrap()),
         };
 
         cmd.output()
