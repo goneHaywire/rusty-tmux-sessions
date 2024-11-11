@@ -11,12 +11,20 @@ pub enum Section {
     Windows,
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Copy)]
+pub enum CommandKind {
+    #[default]
+    Program,
+    Keys,
+}
+
 #[derive(PartialEq, Clone, Debug)]
 pub enum Mode {
     Select(Section),
     Create(Section, InputState, Option<WindowPos>),
     Delete(Section),
     Rename(Section, InputState),
+    SendCommand(CommandKind, InputState),
     Help,
     Exit,
 }
@@ -96,6 +104,27 @@ impl Mode {
         }
     }
 
+    pub fn enter_send_command(&self) -> ToggleResult {
+        match self {
+            Self::Select(Section::Windows) => Toggled(Self::SendCommand(
+                CommandKind::default(),
+                InputState::default(),
+            )),
+            m => NotToggled(m.clone()),
+        }
+    }
+
+    pub fn change_command_mode(&self) -> ToggleResult {
+        use CommandKind::*;
+        use Mode::*;
+
+        match self {
+            SendCommand(Program, input_state) => Toggled(SendCommand(Keys, input_state.clone())),
+            SendCommand(Keys, input_state) => Toggled(SendCommand(Program, input_state.clone())),
+            m => NotToggled(m.clone()),
+        }
+    }
+
     pub fn exit_create(&self) -> ToggleResult {
         match self {
             Self::Create(s, ..) => Toggled(Self::Select(*s)),
@@ -113,6 +142,13 @@ impl Mode {
     pub fn exit_rename(&self) -> ToggleResult {
         match self {
             Self::Rename(s, _) => Toggled(Self::Select(*s)),
+            v => NotToggled(v.clone()),
+        }
+    }
+
+    pub fn exit_send_command(&self) -> ToggleResult {
+        match self {
+            Self::SendCommand(..) => Toggled(Self::Select(Section::Windows)),
             v => NotToggled(v.clone()),
         }
     }

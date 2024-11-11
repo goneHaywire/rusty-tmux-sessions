@@ -1,9 +1,11 @@
-use core::str;
-use std::{fmt::Display, str::FromStr};
+use std::{
+    fmt::Display,
+    str::{self, FromStr},
+};
 
 use anyhow::{Context, Error, Result};
 
-use crate::tui::logger::Logger;
+use crate::tui::{logger::Logger, mode::CommandKind};
 
 use super::{
     tmux::TmuxEntity,
@@ -38,6 +40,7 @@ impl Display for IdW {
 pub struct Window {
     pub id: IdW,
     pub name: String,
+    pub session_name: String,
     is_active: bool,
     pub last_active: u64,
     pub panes_count: usize,
@@ -54,24 +57,25 @@ impl FromStr for Window {
 
         assert_eq!(
             parts.len(),
-            6,
-            "should be 6 parts in list-windows format str"
+            7,
+            "should be 7 parts in list-windows format str"
         );
 
         Ok(Window {
             id: parts[0].parse().unwrap(),
             name: parts[1].into(),
-            is_active: parts[2] == "1",
-            last_active: parts[3]
+            session_name: parts[2].into(),
+            is_active: parts[3] == "1",
+            last_active: parts[4]
                 .parse()
                 .context("error parsing window last_active")?,
-            panes_count: parts[4]
+            panes_count: parts[5]
                 .parse()
                 .context("error parsing window panes_count")?,
-            current_command: if parts[5].is_empty() {
+            current_command: if parts[6].is_empty() {
                 None
             } else {
-                Some(parts[5].into())
+                Some(parts[6].into())
             },
         })
     }
@@ -91,8 +95,8 @@ impl WindowService {
             .collect()
     }
 
-    pub fn get_window(session_name: &str, id: &IdW) -> Result<Window> {
-        let window = TmuxCommand::get_window(session_name, id)?;
+    pub fn get_window(id: &IdW) -> Result<Window> {
+        let window = TmuxCommand::get_window(id)?;
 
         str::from_utf8(&window)
             .context("error parsing get-window output")
@@ -134,6 +138,14 @@ impl WindowService {
         TmuxCommand::attach_window(id)
     }
 
+    pub fn send_keys(id: &IdW, keys: &[u8], kind: CommandKind) -> Result<()> {
+        let keys: &[&str] = match kind {
+            CommandKind::Program => &[str::from_utf8(keys).unwrap(), "Enter"],
+            CommandKind::Keys => &[str::from_utf8(keys).unwrap()],
+        };
+        TmuxCommand::send_keys(id, keys)
+    }
+
     fn show(name: &str) -> Result<()> {
         todo!()
     }
@@ -145,11 +157,12 @@ impl WindowService {
 
 #[test]
 fn from_str() {
-    let window_str = "@42,test_window,1,1722892534,4,cargo";
+    let window_str = "@42,test_window,sesh,1,1722892534,4,cargo";
     let window = Window::from_str(window_str).unwrap();
 
     assert_eq!(IdW::from(42), window.id);
     assert_eq!("test_window".to_string(), window.name);
+    assert_eq!("sesh".to_string(), window.session_name);
     assert!(window.is_active);
     assert_eq!(1722892534, window.last_active);
     assert_eq!(4, window.panes_count);

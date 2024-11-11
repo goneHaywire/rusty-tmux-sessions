@@ -13,11 +13,12 @@ todo!
 - [X] refactor app central state
 - [X] implement session sorting
 - [X] display session/window details
-- [ ] send commands to windows
-- [ ] send keypresses
-- [ ] command history?
+- [X] send commands to windows
+- [X] send keypresses
 - [ ] hide/show sessions
 - [ ] toggle hidden in TUI
+- [ ] some small refactors
+- [ ] command history?
 - [ ] get it working without initial sessions
 - [ ] visual mode selection (batch actions)
 - [ ] compound operations (numbered navigation, swapping, merging?)

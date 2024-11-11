@@ -2,7 +2,10 @@ use ratatui::crossterm::event::KeyCode;
 
 use crate::tmux::{tmux_command::WindowPos, windows::IdW};
 
-use super::{mode::Section, tmux_list::Selection};
+use super::{
+    mode::{CommandKind, Section},
+    tmux_list::Selection,
+};
 
 pub enum Actions<'a> {
     Tick,
@@ -12,6 +15,7 @@ pub enum Actions<'a> {
     // helpers
     LoadSessions,
     LoadWindows,
+    UpdateWindow(IdW),
     ClearInput,
     InputKey(KeyCode),
 
@@ -22,6 +26,7 @@ pub enum Actions<'a> {
     RemoveSession(String),
     RemoveWindow(String, IdW),
     Rename(Section, &'a str),
+    SendCommand(CommandKind, String),
 
     // mode switching
     EnterCreate(Option<WindowPos>),
@@ -31,8 +36,11 @@ pub enum Actions<'a> {
     EnterDelete,
     ExitDelete,
     ToggleHelp,
+    EnterSendCommand,
+    ExitSendCommand,
 
     ChangeSection(Section),
+    ChangeCommandKind,
     ToggleHidden,
     AttachSession,
     AttachWindow,

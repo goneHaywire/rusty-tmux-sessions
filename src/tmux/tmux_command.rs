@@ -1,3 +1,4 @@
+use core::str;
 use std::{
     fmt::Display,
     io,
@@ -6,14 +7,14 @@ use std::{
 
 use anyhow::{anyhow, Result};
 
-use crate::tui::logger::Logger;
+use crate::tui::{logger::Logger, mode::CommandKind};
 
 use super::windows::IdW;
 const SESSION_FORMAT: &str =
     "#{#{session_id},#S,#{?session_attached,1,},#{session_activity},#{session_windows},#{session_created}}";
 
 const WINDOW_FORMAT: &str =
-    "#{#{window_id},#W,#{window_active},#{window_activity},#{window_panes},#{pane_current_command}}";
+    "#{#{window_id},#W,#S,#{window_active},#{window_activity},#{window_panes},#{pane_current_command}}";
 
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub enum WindowPos {
@@ -86,7 +87,7 @@ impl TmuxCommand {
             .as_result("get session command failed")
     }
 
-    pub fn get_window(session_name: &str, id: &IdW) -> Result<Vec<u8>> {
+    pub fn get_window(id: &IdW) -> Result<Vec<u8>> {
         base_cmd()
             .args([
                 "list-windows",
@@ -94,8 +95,6 @@ impl TmuxCommand {
                 WINDOW_FORMAT,
                 "-f",
                 &format!("#{{==:{id},#{{window_id}}}}"),
-                "-t",
-                session_name,
             ])
             .output()
             .as_result("get window command failed for window @{id}")
@@ -170,6 +169,17 @@ impl TmuxCommand {
             ])
             .output()
             .as_result(&format!("new-window failed for window {name}"))
+            .map(|_| ())
+    }
+
+    pub fn send_keys(window_id: &IdW, keys: &[&str]) -> Result<()> {
+        let mut cmd = base_cmd();
+        let cmd = cmd
+            .args(["send-keys", "-t", &window_id.to_string()])
+            .args(keys);
+
+        cmd.output()
+            .as_result(&format!("send-keys failed for keys {:?}", ()))
             .map(|_| ())
     }
 }
