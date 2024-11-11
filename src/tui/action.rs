@@ -15,6 +15,7 @@ pub enum Actions<'a> {
     // helpers
     LoadSessions,
     LoadWindows,
+    UpdateWindow(IdW),
     ClearInput,
     InputKey(KeyCode),
 
@@ -39,6 +40,7 @@ pub enum Actions<'a> {
     ExitSendCommand,
 
     ChangeSection(Section),
+    ChangeCommandKind,
     ToggleHidden,
     AttachSession,
     AttachWindow,

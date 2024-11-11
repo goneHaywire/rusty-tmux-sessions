@@ -8,7 +8,7 @@ use ratatui::{
 use ratatui_macros::{horizontal, vertical};
 use time_humanize::HumanTime;
 
-use crate::tui::mode::Section;
+use crate::tui::mode::{Section, CommandKind};
 
 use super::{app::App, mode::Mode};
 
@@ -24,6 +24,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     use Mode::*;
     use Section::*;
+    use CommandKind::*;
 
     let block = Block::bordered()
         .border_type(BorderType::Thick)
@@ -87,8 +88,13 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
             active_item.expect("should have a selected item").magenta(),
             " ".into(),
         ],
-        SendCommand(..) => vec![
+        SendCommand(Program, _) => vec![
             " Send command to window ".into(),
+            active_item.expect("window should be selected").magenta(),
+            " ".into(),
+        ],
+        SendCommand(Keys, _) => vec![
+            " Send keys to window ".into(),
             active_item.expect("window should be selected").magenta(),
             " ".into(),
         ],

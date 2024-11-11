@@ -50,6 +50,20 @@ impl App {
         self.windows.insert(session_name.clone(), windows);
     }
 
+    fn update_window(&mut self, id: &IdW) {
+        if let Ok(window) = WindowService::get_window(id) {
+            self.windows
+                .entry(window.session_name.clone())
+                .and_modify(|windows| {
+                    if let Some(index) = windows.iter().position(|w| w.id == *id) {
+                        windows.push(window);
+                        windows.swap_remove(index);
+                    }
+                });
+            self.hydrate_window_list();
+        }
+    }
+
     pub fn get_active_session(&self) -> Option<&Session> {
         let active_item = self.session_list.get_active_item();
         self.sessions.get(&active_item)
@@ -131,17 +145,7 @@ impl App {
         let id = self.get_selected_window(&session).unwrap().id;
         self.atx.send(A::ExitRename).unwrap();
 
-        if WindowService::rename(&id, new_name).is_ok() {
-            if let Ok(window) = WindowService::get_window(&session, &id) {
-                self.windows.entry(session).and_modify(|windows| {
-                    if let Some(index) = windows.iter().position(|w| w.id == id) {
-                        windows.push(window);
-                        windows.swap_remove(index);
-                    }
-                });
-                self.hydrate_window_list();
-            }
-        };
+        let _ = WindowService::rename(&id, new_name).map(|_| self.atx.send(A::UpdateWindow(id)));
     }
 
     fn create_window(&mut self, name: &str, pos: Option<WindowPos>) {
@@ -152,7 +156,7 @@ impl App {
 
         if WindowService::create(name, &id, &pos).is_ok() {
             let window = WindowService::get_last_created_window_id(&session)
-                .and_then(|id| WindowService::get_window(&session, &id))
+                .and_then(|id| WindowService::get_window(&id))
                 .unwrap();
 
             self.windows.entry(session).and_modify(|windows| {
@@ -225,18 +229,15 @@ impl App {
         }
     }
 
-    fn send_command(&self, kind: CommandKind, command: String) {
+    fn send_command(&mut self, kind: CommandKind, keys: String) {
         let session = self.session_list.get_active_item();
         let id = self.get_selected_window(&session).unwrap().id;
         self.atx.send(A::ExitSendCommand).unwrap();
 
-        //TODO: reload the window to get the new running cmd
-        //TODO: handle both programs & individual keys
-        if WindowService::send_keys(&id, command.as_bytes(), CommandKind::Program).is_ok() {
-            self.atx
-                .send(A::Select(Section::Windows, Selection::Noop))
-                .unwrap();
-        }
+        // TODO: since the event loop runs continuously without delay, the new running command is not correctly updated,
+        // if this persists after the migration to tokio, add a manual sleep for a few millis
+        let _ = WindowService::send_keys(&id, keys.as_bytes(), kind)
+            .map(|_| self.atx.send(A::UpdateWindow(id)));
     }
 
     fn input_key(&mut self, key: KeyCode) {
@@ -310,6 +311,10 @@ impl App {
     fn exit_send_command(&mut self) {
         self.mode = self.mode.exit_send_command().unwrap();
     }
+
+    fn change_command_kind(&mut self) {
+        self.mode = self.mode.change_command_mode().unwrap();
+    }
 }
 
 impl Default for App {
@@ -375,6 +380,12 @@ impl App {
                 },
                 SendCommand(k, input),
             ) => A::SendCommand(*k, input.content.clone()),
+            (
+                KeyEvent {
+                    code: KeyCode::Tab, ..
+                },
+                SendCommand(..),
+            ) => A::ChangeCommandKind,
             (
                 KeyEvent {
                     code: KeyCode::Esc, ..
@@ -544,6 +555,7 @@ impl App {
             Quit => self.exit(),
             LoadSessions => self.load_sessions(),
             LoadWindows => self.load_windows(),
+            UpdateWindow(id) => self.update_window(&id),
             Create(Section::Sessions, name, _) => self.create_session(name),
             Create(Section::Windows, name, pos) => self.create_window(name, pos),
             Select(Section::Sessions, selection) => {
@@ -567,7 +579,7 @@ impl App {
             RemoveWindow(window, id) => self.remove_window(window, &id),
             Rename(Section::Sessions, name) => self.rename_session(name),
             Rename(Section::Windows, name) => self.rename_window(name),
-            SendCommand(kind, command) => self.send_command(kind, command),
+            SendCommand(kind, keys) => self.send_command(kind, keys),
             ToggleHelp => todo!(),
             ChangeSection(section) => self.mode = self.mode.change_section(section),
             ClearInput => self.cancel_input(),
@@ -576,6 +588,7 @@ impl App {
             EnterRename => self.enter_rename(),
             EnterDelete => self.enter_delete(),
             EnterSendCommand => self.enter_send_command(),
+            ChangeCommandKind => self.change_command_kind(),
             ExitCreate => self.exit_create(),
             ExitRename => self.exit_rename(),
             ExitDelete => self.exit_delete(),
