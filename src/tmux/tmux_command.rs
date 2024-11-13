@@ -9,7 +9,7 @@ use anyhow::{anyhow, Result};
 
 use crate::tui::{logger::Logger, mode::CommandKind};
 
-use super::windows::IdW;
+use super::{sessions::SessionEnv, windows::IdW};
 const SESSION_FORMAT: &str =
     "#{#{session_id},#S,#{?session_attached,1,},#{session_activity},#{session_windows},#{session_created}}";
 
@@ -179,7 +179,43 @@ impl TmuxCommand {
             .args(keys);
 
         cmd.output()
-            .as_result(&format!("send-keys failed for keys {:?}", ()))
+            .as_result(&format!("send-keys failed for keys {:?}", keys))
             .map(|_| ())
+    }
+
+    pub fn set_env(session_name: &str, key: SessionEnv, value: Option<&str>) -> Result<()> {
+        let mut cmd = base_cmd();
+        let cmd = cmd.args(["set-environment", "-t", session_name]);
+
+        let cmd = match value {
+            Some(value) => cmd.args([&key.to_string(), value]),
+            None => cmd.args(["-u", &key.to_string()]),
+        };
+
+        cmd.output()
+            .as_result(&format!(
+                "set-environment failed for session {session_name}"
+            ))
+            .map(|_| ())
+    }
+
+    pub fn get_env(session_name: &str, key: SessionEnv) -> Result<String> {
+        base_cmd()
+            .args(["show-environment", "-t", session_name, &key.to_string()])
+            .output()
+            .as_result(&format!(
+                "show-environment failed for session {session_name}"
+            ))
+            .and_then(|output| {
+                let value = output
+                    .as_slice()
+                    .split(|char| *char == b'=')
+                    .last()
+                    .unwrap_or_default();
+
+                str::from_utf8(value)
+                    .map(|s| s.trim().to_string())
+                    .map_err(Into::into)
+            })
     }
 }

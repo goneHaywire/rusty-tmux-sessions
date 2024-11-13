@@ -145,14 +145,6 @@ impl WindowService {
         };
         TmuxCommand::send_keys(id, keys)
     }
-
-    fn show(name: &str) -> Result<()> {
-        todo!()
-    }
-
-    fn hide(name: &str) -> Result<()> {
-        todo!()
-    }
 }
 
 #[test]

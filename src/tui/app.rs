@@ -31,6 +31,7 @@ pub struct App {
     pub mode: Mode,
     atx: Sender<A<'static>>,
     arx: Receiver<A<'static>>,
+    show_hidden: bool,
 }
 
 impl App {
@@ -81,6 +82,9 @@ impl App {
 
     fn hydrate_session_list(&mut self) {
         let mut sessions: Vec<Session> = self.sessions.values().cloned().collect();
+        if !self.show_hidden {
+            sessions.retain(|s| !s.is_hidden);
+        }
         sessions.sort_by_key(|s| s.last_attached);
         sessions.reverse();
         sessions.rotate_left(1);
@@ -315,6 +319,13 @@ impl App {
     fn change_command_kind(&mut self) {
         self.mode = self.mode.change_command_mode().unwrap();
     }
+
+    fn toggle_hidden(&mut self) {
+        self.show_hidden = !self.show_hidden;
+        self.atx
+            .send(A::Select(Section::Sessions, Selection::Noop))
+            .unwrap();
+    }
 }
 
 impl Default for App {
@@ -328,6 +339,7 @@ impl Default for App {
             mode: Default::default(),
             atx,
             arx,
+            show_hidden: false,
         }
     }
 }
@@ -593,7 +605,7 @@ impl App {
             ExitRename => self.exit_rename(),
             ExitDelete => self.exit_delete(),
             ExitSendCommand => self.exit_send_command(),
-            ToggleHidden => todo!(),
+            ToggleHidden => self.toggle_hidden(),
             AttachSession => self.attach_session(),
             AttachWindow => self.attach_window(),
         };
