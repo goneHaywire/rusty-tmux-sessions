@@ -26,7 +26,7 @@ use super::{
 pub struct App {
     pub session_list: StatefulList,
     pub window_list: StatefulList,
-    sessions: HashMap<String, Session>,
+    pub sessions: HashMap<String, Session>,
     windows: HashMap<String, Vec<Window>>,
     pub mode: Mode,
     atx: Sender<A<'static>>,
@@ -83,7 +83,7 @@ impl App {
     fn hydrate_session_list(&mut self) {
         let mut sessions: Vec<Session> = self.sessions.values().cloned().collect();
         if !self.show_hidden {
-            sessions.retain(|s| !s.is_hidden);
+            sessions.retain(|s| s.is_attached || !s.is_hidden);
         }
         sessions.sort_by_key(|s| s.last_attached);
         sessions.reverse();
@@ -233,6 +233,40 @@ impl App {
         }
     }
 
+    fn hide_session(&mut self) {
+        let session = self.session_list.get_active_item();
+
+        if let Some(session) = self.sessions.get_mut(&session) {
+            if session.is_attached {
+                return;
+            }
+
+            if SessionService::hide(&session.name).is_ok() {
+                session.is_hidden = true;
+                self.atx
+                    .send(A::Select(Section::Sessions, Selection::Noop))
+                    .unwrap();
+            };
+        };
+    }
+
+    fn show_session(&mut self) {
+        let session = self.session_list.get_active_item();
+
+        if let Some(session) = self.sessions.get_mut(&session) {
+            if session.is_attached {
+                return;
+            }
+
+            if SessionService::show(&session.name).is_ok() {
+                session.is_hidden = false;
+                self.atx
+                    .send(A::Select(Section::Sessions, Selection::Noop))
+                    .unwrap();
+            };
+        };
+    }
+
     fn send_command(&mut self, kind: CommandKind, keys: String) {
         let session = self.session_list.get_active_item();
         let id = self.get_selected_window(&session).unwrap().id;
@@ -352,7 +386,7 @@ impl App {
             }
             let state = &self.mode.clone();
             let action = match tui.events.next() {
-                Events::Key(k) => App::handle_key_events(state, k),
+                Events::Key(k) => App::handle_key_events(state, self.show_hidden, k),
                 Events::Resize(_, _) | Events::Tick => A::Tick,
                 Events::Init => A::Init,
                 Events::Quit => A::Quit,
@@ -366,7 +400,7 @@ impl App {
         Ok(())
     }
 
-    fn handle_key_events(mode: &Mode, key: KeyEvent) -> A {
+    fn handle_key_events(mode: &Mode, show_hidden: bool, key: KeyEvent) -> A {
         use KeyCode::Char;
         use Mode::*;
         use Section::*;
@@ -482,6 +516,18 @@ impl App {
             ) => A::ToggleHidden,
             (
                 KeyEvent {
+                    code: Char('z'), ..
+                },
+                Select(Sessions),
+            ) if show_hidden => A::ShowSession,
+            (
+                KeyEvent {
+                    code: Char('z'), ..
+                },
+                Select(Sessions),
+            ) => A::HideSession,
+            (
+                KeyEvent {
                     code: Char(' '), ..
                 }
                 | KeyEvent {
@@ -578,7 +624,9 @@ impl App {
                         self.load_windows();
                     }
                     self.hydrate_window_list();
-                    self.window_list.select(Selection::Index(Some(0)));
+                    if selection != Selection::Noop {
+                        self.window_list.select(Selection::Index(Some(0)));
+                    }
                 }
             }
             Select(Section::Windows, selection) => {
@@ -592,6 +640,8 @@ impl App {
             Rename(Section::Sessions, name) => self.rename_session(name),
             Rename(Section::Windows, name) => self.rename_window(name),
             SendCommand(kind, keys) => self.send_command(kind, keys),
+            HideSession => self.hide_session(),
+            ShowSession => self.show_session(),
             ToggleHelp => todo!(),
             ChangeSection(section) => self.mode = self.mode.change_section(section),
             ClearInput => self.cancel_input(),

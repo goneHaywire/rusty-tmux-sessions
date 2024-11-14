@@ -2,6 +2,7 @@ use std::ops::Index;
 
 use ratatui::widgets::ListState;
 
+#[derive(PartialEq, Copy, Clone)]
 pub enum Selection {
     Index(Option<usize>),
     NextNoWrap,
@@ -17,12 +18,10 @@ pub enum Selection {
 ///
 /// * `items`: Vector of Sessions or Windows
 /// * `state`: ListState
-/// * `show_hidden`: Whether to show hidden items or not
 #[derive(Debug)]
 pub struct StatefulList {
     pub items: Vec<String>,
     pub state: ListState,
-    show_hidden: bool,
 }
 
 impl Default for StatefulList {
@@ -30,7 +29,6 @@ impl Default for StatefulList {
         Self {
             items: Default::default(),
             state: ListState::default().with_selected(Some(0)),
-            show_hidden: false,
         }
     }
 }
@@ -43,12 +41,12 @@ impl StatefulList {
     }
 
     pub fn items(&mut self, items: Vec<String>) {
+        if let Some(index) = self.state.selected() {
+            if index >= items.len() {
+                self.select(Selection::First);
+            }
+        }
         self.items = items;
-    }
-
-    /// show or hide hidden items
-    pub fn toggle_hidden(&mut self) {
-        self.show_hidden = !self.show_hidden;
     }
 
     pub fn get_active_item(&self) -> String {

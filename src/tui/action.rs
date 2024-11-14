@@ -27,6 +27,8 @@ pub enum Actions<'a> {
     RemoveWindow(String, IdW),
     Rename(Section, &'a str),
     SendCommand(CommandKind, String),
+    HideSession,
+    ShowSession,
 
     // mode switching
     EnterCreate(Option<WindowPos>),

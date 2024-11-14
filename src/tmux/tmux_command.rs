@@ -91,6 +91,7 @@ impl TmuxCommand {
         base_cmd()
             .args([
                 "list-windows",
+                "-a",
                 "-F",
                 WINDOW_FORMAT,
                 "-f",

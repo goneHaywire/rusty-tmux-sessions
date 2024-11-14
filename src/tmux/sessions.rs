@@ -21,7 +21,7 @@ impl Display for SessionEnv {
 pub struct Session {
     pub id: usize,
     pub name: String,
-    is_attached: bool,
+    pub is_attached: bool,
     pub last_attached: Option<u64>,
     pub created_at: u64,
     windows_count: usize,

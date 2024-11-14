@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use ratatui::{
     layout::{Alignment, Rect},
     style::{Style, Stylize},
@@ -179,7 +181,21 @@ pub fn render_session_list(frame: &mut Frame, area: Rect, app: &App) {
         len => block.title(format!(" Sessions ({len}) ").bold()),
     };
 
-    let list: List = app.session_list.items.iter().map(|s| s as &str).collect();
+    let list: List = app
+        .session_list
+        .items
+        .iter()
+        .map(|s| {
+            if let Some(session) = app.sessions.get(s) {
+                if !session.is_attached && session.is_hidden {
+                    let mut name = s.clone();
+                    name.push_str(" 󰈉 ");
+                    return Into::<Cow<'_, str>>::into(name);
+                }
+            }
+            s.into()
+        })
+        .collect();
     let list = list.highlight_symbol("> ").block(block);
 
     let mut state = app.session_list.state.clone();
