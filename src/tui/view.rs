@@ -10,9 +10,11 @@ use ratatui::{
 use ratatui_macros::{horizontal, vertical};
 use time_humanize::HumanTime;
 
-use crate::tui::mode::{Section, CommandKind};
+use crate::tui::mode::{CommandKind, Section};
 
 use super::{app::App, mode::Mode};
+
+const EYE_ICON: &str = "󰈉";
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let [body, footer_area] = vertical![*=1, <=3].areas(frame.area());
@@ -24,9 +26,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 }
 
 fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
+    use CommandKind::*;
     use Mode::*;
     use Section::*;
-    use CommandKind::*;
 
     let block = Block::bordered()
         .border_type(BorderType::Thick)
@@ -175,10 +177,15 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 pub fn render_session_list(frame: &mut Frame, area: Rect, app: &App) {
+    let eye_icon = if app.show_hidden {
+        &format!(" {EYE_ICON}  ")
+    } else {
+        " "
+    };
     let block = Block::bordered().border_type(BorderType::Thick);
     let block = match app.session_list.items.len() {
         0 => block.title(" No sessions ".bold()),
-        len => block.title(format!(" Sessions ({len}) ").bold()),
+        len => block.title(format!(" Sessions ({len}){eye_icon}").bold()),
     };
 
     let list: List = app
@@ -187,9 +194,9 @@ pub fn render_session_list(frame: &mut Frame, area: Rect, app: &App) {
         .iter()
         .map(|s| {
             if let Some(session) = app.sessions.get(s) {
-                if !session.is_attached && session.is_hidden {
+                if session.is_hidden {
                     let mut name = s.clone();
-                    name.push_str(" 󰈉 ");
+                    name.push_str(&format!(" {EYE_ICON} "));
                     return Into::<Cow<'_, str>>::into(name);
                 }
             }
