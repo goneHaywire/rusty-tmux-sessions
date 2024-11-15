@@ -2,6 +2,7 @@ use std::ops::Index;
 
 use ratatui::widgets::ListState;
 
+#[derive(PartialEq, Copy, Clone)]
 pub enum Selection {
     Index(Option<usize>),
     NextNoWrap,
@@ -17,12 +18,10 @@ pub enum Selection {
 ///
 /// * `items`: Vector of Sessions or Windows
 /// * `state`: ListState
-/// * `show_hidden`: Whether to show hidden items or not
 #[derive(Debug)]
 pub struct StatefulList {
     pub items: Vec<String>,
     pub state: ListState,
-    show_hidden: bool,
 }
 
 impl Default for StatefulList {
@@ -30,40 +29,36 @@ impl Default for StatefulList {
         Self {
             items: Default::default(),
             state: ListState::default().with_selected(Some(0)),
-            show_hidden: false,
         }
     }
 }
 
 impl StatefulList {
-    pub fn with_items(items: Vec<String>) -> Self {
-        let mut list = Self::default();
-        list.items(items);
-        list
-    }
-
-    pub fn items(&mut self, items: Vec<String>) {
+    /// replace the list items and select the last item if the previous selection exceeded the new
+    /// items length
+    ///
+    /// * `items`: new list to replace the old
+    pub fn set_items(&mut self, items: Vec<String>) {
         self.items = items;
+        if let Some(index) = self.state.selected() {
+            if index >= self.items.len() {
+                self.select(Selection::Last);
+            }
+        }
     }
 
-    /// show or hide hidden items
-    pub fn toggle_hidden(&mut self) {
-        self.show_hidden = !self.show_hidden;
-    }
-
-    pub fn get_active_item(&self) -> String {
+    pub fn get_active_item(&self) -> &String {
         let active_idx = self
             .state
             .selected()
             .expect("there should always be a selection");
-        let index = self.items.index(active_idx);
-        index.clone()
+        self.items.index(active_idx)
     }
 
-    /// selection function that handles 4 different cases
+    /// selection function that handles multiple selection options and returns the selected &item
     ///
     /// * `selection`: Selection
-    pub fn select(&mut self, selection: Selection) -> String {
+    pub fn select(&mut self, selection: Selection) -> &String {
         use Selection::*;
         let last_index = self.items.len() - 1;
         let current = self.state.selected().expect("invalid selection");

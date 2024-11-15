@@ -15,8 +15,8 @@ todo!
 - [X] display session/window details
 - [X] send commands to windows
 - [X] send keypresses
-- [ ] hide/show sessions
-- [ ] toggle hidden in TUI
+- [X] hide/show sessions
+- [X] toggle hidden in TUI
 - [ ] some small refactors
 - [ ] command history?
 - [ ] get it working without initial sessions

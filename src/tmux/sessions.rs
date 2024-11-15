@@ -1,21 +1,31 @@
-use std::{
-    fmt::Debug,
-    str::{self, FromStr},
-};
+use core::str;
+use std::{fmt::Display, str::FromStr, thread::scope};
 
 use anyhow::{Context, Error, Result};
 
 use super::{tmux::TmuxEntity, tmux_command::TmuxCommand};
 
+pub enum SessionEnv {
+    Hidden,
+}
+
+impl Display for SessionEnv {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SessionEnv::Hidden => write!(f, "HIDDEN"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Session {
     pub id: usize,
     pub name: String,
-    is_attached: bool,
+    pub is_attached: bool,
     pub last_attached: Option<u64>,
     pub created_at: u64,
     windows_count: usize,
-    is_hidden: bool,
+    pub is_hidden: bool,
 }
 
 impl Session {
@@ -32,12 +42,21 @@ impl FromStr for Session {
 
     fn from_str(s: &str) -> Result<Self> {
         let parts: Vec<_> = s.split(',').collect();
+        let mut is_hidden = false;
 
         assert_eq!(
             parts.len(),
             6,
             "should be 6 parts in list-sessions format str"
         );
+
+        scope(|s| {
+            s.spawn(|| {
+                is_hidden = TmuxCommand::get_env(parts[1], SessionEnv::Hidden)
+                    .map(|v| v == "1")
+                    .unwrap_or_default();
+            });
+        });
 
         let session = Session {
             id: parts[0].trim_start_matches('$').parse().unwrap(),
@@ -50,7 +69,7 @@ impl FromStr for Session {
             created_at: parts[5]
                 .parse()
                 .context("error parsing session created_at")?,
-            is_hidden: false,
+            is_hidden,
         };
         Ok(session)
     }
@@ -96,10 +115,10 @@ impl SessionService {
     }
 
     pub fn hide(name: &str) -> Result<()> {
-        todo!()
+        TmuxCommand::set_env(name, SessionEnv::Hidden, Some("1"))
     }
 
     pub fn show(name: &str) -> Result<()> {
-        todo!()
+        TmuxCommand::set_env(name, SessionEnv::Hidden, None)
     }
 }

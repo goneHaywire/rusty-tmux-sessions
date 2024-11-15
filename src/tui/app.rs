@@ -26,11 +26,12 @@ use super::{
 pub struct App {
     pub session_list: StatefulList,
     pub window_list: StatefulList,
-    sessions: HashMap<String, Session>,
+    pub sessions: HashMap<String, Session>,
     windows: HashMap<String, Vec<Window>>,
     pub mode: Mode,
     atx: Sender<A<'static>>,
     arx: Receiver<A<'static>>,
+    pub show_hidden: bool,
 }
 
 impl App {
@@ -45,7 +46,7 @@ impl App {
 
     fn load_windows(&mut self) {
         let session_name = self.session_list.get_active_item();
-        let windows = WindowService::get_all(&session_name).unwrap();
+        let windows = WindowService::get_all(session_name).unwrap();
 
         self.windows.insert(session_name.clone(), windows);
     }
@@ -66,14 +67,14 @@ impl App {
 
     pub fn get_active_session(&self) -> Option<&Session> {
         let active_item = self.session_list.get_active_item();
-        self.sessions.get(&active_item)
+        self.sessions.get(active_item)
     }
 
     pub fn get_active_window(&self) -> Option<&Window> {
         let session = self.session_list.get_active_item();
-        let id = self.get_selected_window(&session).unwrap().id;
+        let id = self.get_selected_window(session).unwrap().id;
         self.windows
-            .get(&session)
+            .get(session)
             .unwrap()
             .iter()
             .find(|w| w.id == id)
@@ -84,27 +85,30 @@ impl App {
         sessions.sort_by_key(|s| s.last_attached);
         sessions.reverse();
         sessions.rotate_left(1);
+        if !self.show_hidden {
+            sessions.retain(|s| !s.is_hidden);
+        }
 
         let sessions = sessions.into_iter().map(|s| s.name).collect();
-        self.session_list.items(sessions);
+        self.session_list.set_items(sessions);
     }
 
     fn hydrate_window_list(&mut self) {
         let session_name = self.session_list.get_active_item();
         let names = self
             .windows
-            .get(&session_name)
+            .get(session_name)
             .unwrap_or_else(|| panic!("can't find windows for session {}", session_name))
             .iter()
             .map(|w| w.name.clone())
             .collect();
-        self.window_list.items(names);
+        self.window_list.set_items(names);
     }
 
     fn attach_session(&mut self) {
         let current_session = self.session_list.get_active_item();
         if let Ok(mode) =
-            SessionService::attach(&current_session).and_then(|_| self.mode.exit().into())
+            SessionService::attach(current_session).and_then(|_| self.mode.exit().into())
         {
             self.mode = mode;
         }
@@ -112,7 +116,7 @@ impl App {
 
     fn attach_window(&mut self) {
         let session = self.session_list.get_active_item();
-        let id = self.get_selected_window(&session).unwrap().id;
+        let id = self.get_selected_window(session).unwrap().id;
 
         if let Ok(mode) = WindowService::attach(&id).and_then(|_| self.mode.exit().into()) {
             self.mode = mode;
@@ -123,16 +127,16 @@ impl App {
         let old_name = self.session_list.get_active_item();
         self.atx.send(A::ExitRename).unwrap();
 
-        if SessionService::rename(&old_name, new_name).is_ok() {
+        if SessionService::rename(old_name, new_name).is_ok() {
             if let Ok(session) = SessionService::get_session(new_name) {
                 self.sessions
-                    .remove(&old_name)
+                    .remove(old_name)
                     .expect("session should be stored");
                 self.sessions.insert(new_name.into(), session);
 
                 let sesh = self
                     .windows
-                    .remove(&old_name)
+                    .remove(old_name)
                     .expect("session should have windows");
                 self.windows.insert(new_name.into(), sesh);
                 self.hydrate_session_list();
@@ -142,7 +146,7 @@ impl App {
 
     fn rename_window(&mut self, new_name: &str) {
         let session = self.session_list.get_active_item();
-        let id = self.get_selected_window(&session).unwrap().id;
+        let id = self.get_selected_window(session).unwrap().id;
         self.atx.send(A::ExitRename).unwrap();
 
         let _ = WindowService::rename(&id, new_name).map(|_| self.atx.send(A::UpdateWindow(id)));
@@ -151,15 +155,15 @@ impl App {
     fn create_window(&mut self, name: &str, pos: Option<WindowPos>) {
         self.atx.send(A::ExitCreate).unwrap();
         let session = self.session_list.get_active_item();
-        let id = self.get_selected_window(&session).unwrap().id;
+        let id = self.get_selected_window(session).unwrap().id;
         let pos = pos.unwrap_or_default();
 
         if WindowService::create(name, &id, &pos).is_ok() {
-            let window = WindowService::get_last_created_window_id(&session)
+            let window = WindowService::get_last_created_window_id(session)
                 .and_then(|id| WindowService::get_window(&id))
                 .unwrap();
 
-            self.windows.entry(session).and_modify(|windows| {
+            self.windows.entry(session.clone()).and_modify(|windows| {
                 let current_window = windows.iter().position(|w| w.id == id).unwrap();
                 let index = match pos {
                     WindowPos::Before => current_window,
@@ -191,8 +195,8 @@ impl App {
     fn kill_session(&mut self) {
         self.atx.send(A::ExitDelete).unwrap();
         let session = self.session_list.get_active_item();
-        if SessionService::kill(&session).is_ok() {
-            self.atx.send(A::RemoveSession(session)).unwrap();
+        if SessionService::kill(session).is_ok() {
+            self.atx.send(A::RemoveSession(session.clone())).unwrap();
             self.atx
                 .send(A::Select(Section::Sessions, Selection::PrevNoWrap))
                 .unwrap();
@@ -212,26 +216,63 @@ impl App {
 
     fn kill_window(&mut self) {
         let session = self.session_list.get_active_item();
-        let id = self.get_selected_window(&session).unwrap().id;
+        let id = self.get_selected_window(session).unwrap().id;
         self.atx.send(A::ExitDelete).unwrap();
 
-        if self.windows.get(&session).unwrap().len() == 1 {
+        if self.windows.get(session).unwrap().len() == 1 {
             self.atx.send(A::EnterDelete).unwrap();
             self.atx.send(A::ChangeSection(Section::Sessions)).unwrap();
             self.atx.send(A::Kill(Section::Sessions)).unwrap();
             return;
         }
         if WindowService::kill(&id).is_ok() {
-            self.atx.send(A::RemoveWindow(session, id)).unwrap();
+            self.atx.send(A::RemoveWindow(session.clone(), id)).unwrap();
             self.atx
                 .send(A::Select(Section::Windows, Selection::PrevNoWrap))
                 .unwrap();
         }
     }
 
+    fn toggle_hide_session(&self) {
+        let session = self.session_list.get_active_item();
+        let session = self.sessions.get(session).unwrap();
+
+        let action = match session.is_hidden {
+            true => A::ShowSession,
+            false => A::HideSession,
+        };
+        self.atx.send(action).unwrap();
+    }
+
+    fn hide_session(&mut self) {
+        let session = self.session_list.get_active_item();
+
+        if SessionService::hide(session).is_ok() {
+            if let Some(session) = self.sessions.get_mut(session) {
+                session.is_hidden = true;
+                self.atx
+                    .send(A::Select(Section::Sessions, Selection::Noop))
+                    .unwrap();
+            };
+        };
+    }
+
+    fn show_session(&mut self) {
+        let session = self.session_list.get_active_item();
+
+        if SessionService::show(session).is_ok() {
+            if let Some(session) = self.sessions.get_mut(session) {
+                session.is_hidden = false;
+                self.atx
+                    .send(A::Select(Section::Sessions, Selection::Noop))
+                    .unwrap();
+            };
+        };
+    }
+
     fn send_command(&mut self, kind: CommandKind, keys: String) {
         let session = self.session_list.get_active_item();
-        let id = self.get_selected_window(&session).unwrap().id;
+        let id = self.get_selected_window(session).unwrap().id;
         self.atx.send(A::ExitSendCommand).unwrap();
 
         // TODO: since the event loop runs continuously without delay, the new running command is not correctly updated,
@@ -268,11 +309,11 @@ impl App {
         if let Toggled(mut mode) = self.mode.enter_rename() {
             self.mode = match mode {
                 Mode::Rename(Section::Sessions, ref mut input) => {
-                    input.set_content(&self.session_list.get_active_item());
+                    input.set_content(self.session_list.get_active_item());
                     mode
                 }
                 Mode::Rename(Section::Windows, ref mut input) => {
-                    input.set_content(&self.window_list.get_active_item());
+                    input.set_content(self.window_list.get_active_item());
                     mode
                 }
                 _ => mode,
@@ -315,6 +356,13 @@ impl App {
     fn change_command_kind(&mut self) {
         self.mode = self.mode.change_command_mode().unwrap();
     }
+
+    fn toggle_hidden(&mut self) {
+        self.show_hidden = !self.show_hidden;
+        self.atx
+            .send(A::Select(Section::Sessions, Selection::Noop))
+            .unwrap();
+    }
 }
 
 impl Default for App {
@@ -328,6 +376,7 @@ impl Default for App {
             mode: Default::default(),
             atx,
             arx,
+            show_hidden: false,
         }
     }
 }
@@ -340,7 +389,7 @@ impl App {
             }
             let state = &self.mode.clone();
             let action = match tui.events.next() {
-                Events::Key(k) => App::handle_key_events(state, k),
+                Events::Key(k) => App::handle_key_events(state, self.show_hidden, k),
                 Events::Resize(_, _) | Events::Tick => A::Tick,
                 Events::Init => A::Init,
                 Events::Quit => A::Quit,
@@ -354,7 +403,7 @@ impl App {
         Ok(())
     }
 
-    fn handle_key_events(mode: &Mode, key: KeyEvent) -> A {
+    fn handle_key_events(mode: &Mode, show_hidden: bool, key: KeyEvent) -> A {
         use KeyCode::Char;
         use Mode::*;
         use Section::*;
@@ -470,6 +519,18 @@ impl App {
             ) => A::ToggleHidden,
             (
                 KeyEvent {
+                    code: Char('z'), ..
+                },
+                Select(Sessions),
+            ) if show_hidden => A::ToggleHideSession,
+            (
+                KeyEvent {
+                    code: Char('z'), ..
+                },
+                Select(Sessions),
+            ) => A::HideSession,
+            (
+                KeyEvent {
                     code: Char(' '), ..
                 }
                 | KeyEvent {
@@ -562,11 +623,13 @@ impl App {
                 if self.sessions.len() > 1 {
                     self.hydrate_session_list();
                     let session = self.session_list.select(selection);
-                    if !self.windows.contains_key(&session) {
+                    if !self.windows.contains_key(session) {
                         self.load_windows();
                     }
                     self.hydrate_window_list();
-                    self.window_list.select(Selection::Index(Some(0)));
+                    if selection != Selection::Noop {
+                        self.window_list.select(Selection::Index(Some(0)));
+                    }
                 }
             }
             Select(Section::Windows, selection) => {
@@ -580,6 +643,9 @@ impl App {
             Rename(Section::Sessions, name) => self.rename_session(name),
             Rename(Section::Windows, name) => self.rename_window(name),
             SendCommand(kind, keys) => self.send_command(kind, keys),
+            ToggleHideSession => self.toggle_hide_session(),
+            HideSession => self.hide_session(),
+            ShowSession => self.show_session(),
             ToggleHelp => todo!(),
             ChangeSection(section) => self.mode = self.mode.change_section(section),
             ClearInput => self.cancel_input(),
@@ -593,7 +659,7 @@ impl App {
             ExitRename => self.exit_rename(),
             ExitDelete => self.exit_delete(),
             ExitSendCommand => self.exit_send_command(),
-            ToggleHidden => todo!(),
+            ToggleHidden => self.toggle_hidden(),
             AttachSession => self.attach_session(),
             AttachWindow => self.attach_window(),
         };
