@@ -28,13 +28,6 @@ pub struct Session {
     pub is_hidden: bool,
 }
 
-impl Session {
-    fn with_name(mut self, name: &str) -> Self {
-        self.name = name.into();
-        self
-    }
-}
-
 impl TmuxEntity for Session {}
 
 impl FromStr for Session {

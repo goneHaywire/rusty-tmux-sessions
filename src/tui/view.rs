@@ -42,10 +42,10 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
 
     let active_item = match app.mode {
         Select(Sessions) | Delete(Sessions) | Rename(Sessions, _) => {
-            Some(app.session_list.get_active_item())
+            app.session_list.get_active_item()
         }
         Select(Windows) | Delete(Windows) | Rename(Windows, _) | SendCommand(..) => {
-            Some(app.window_list.get_active_item())
+            app.window_list.get_active_item()
         }
         _ => None,
     }

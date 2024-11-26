@@ -17,9 +17,9 @@ todo!
 - [X] send keypresses
 - [X] hide/show sessions
 - [X] toggle hidden in TUI
-- [ ] some small refactors
+- [/] some small refactors
 - [ ] command history?
-- [ ] get it working without initial sessions
+- [/] get it working without initial sessions
 - [ ] visual mode selection (batch actions)
 - [ ] compound operations (numbered navigation, swapping, merging?)
 - [ ] searching

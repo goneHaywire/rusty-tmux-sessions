@@ -2,13 +2,14 @@ use std::ops::Index;
 
 use ratatui::widgets::ListState;
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Default)]
 pub enum Selection {
     Index(Option<usize>),
     NextNoWrap,
     PrevNoWrap,
     Next,
     Prev,
+    #[default]
     First,
     Last,
     Noop,
@@ -18,19 +19,10 @@ pub enum Selection {
 ///
 /// * `items`: Vector of Sessions or Windows
 /// * `state`: ListState
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct StatefulList {
     pub items: Vec<String>,
     pub state: ListState,
-}
-
-impl Default for StatefulList {
-    fn default() -> Self {
-        Self {
-            items: Default::default(),
-            state: ListState::default().with_selected(Some(0)),
-        }
-    }
 }
 
 impl StatefulList {
@@ -40,28 +32,42 @@ impl StatefulList {
     /// * `items`: new list to replace the old
     pub fn set_items(&mut self, items: Vec<String>) {
         self.items = items;
-        if let Some(index) = self.state.selected() {
-            if index >= self.items.len() {
-                self.select(Selection::Last);
+        match self.state.selected() {
+            Some(index) => {
+                if index >= self.items.len() {
+                    self.select(Selection::Last);
+                }
             }
+            None if !self.items.is_empty() => {
+                self.select(Selection::First);
+            }
+            None => (),
         }
     }
 
-    pub fn get_active_item(&self) -> &String {
-        let active_idx = self
-            .state
-            .selected()
-            .expect("there should always be a selection");
-        self.items.index(active_idx)
+    //pub fn get_active_item(&self) -> &String {
+    //    let active_idx = self
+    //        .state
+    //        .selected()
+    //        .expect("there should always be a selection");
+    //    self.items.index(active_idx)
+    //}
+
+    pub fn get_active_item(&self) -> Option<&String> {
+        self.state.selected().map(|idx| self.items.index(idx))
     }
 
     /// selection function that handles multiple selection options and returns the selected &item
     ///
     /// * `selection`: Selection
-    pub fn select(&mut self, selection: Selection) -> &String {
+    pub fn select(&mut self, selection: Selection) -> Option<&String> {
         use Selection::*;
+
+        if self.items.is_empty() {
+            return None;
+        };
         let last_index = self.items.len() - 1;
-        let current = self.state.selected().expect("invalid selection");
+        let current = self.state.selected().unwrap();
 
         match selection {
             First => self.state.select_first(),

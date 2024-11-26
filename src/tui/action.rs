@@ -15,6 +15,8 @@ pub enum Actions<'a> {
     // helpers
     LoadSessions,
     LoadWindows,
+    HydrateSessions,
+    HydrateWindows,
     UpdateWindow(IdW),
     ClearInput,
     InputKey(KeyCode),

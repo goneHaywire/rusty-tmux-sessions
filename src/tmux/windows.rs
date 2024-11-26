@@ -120,17 +120,14 @@ impl WindowService {
     }
 
     pub fn create(name: &str, id: &IdW, pos: &WindowPos) -> Result<()> {
-        Logger::log(&format!("creating {id}"));
         TmuxCommand::create_window(name, id, pos)
     }
 
     pub fn kill(id: &IdW) -> Result<()> {
-        Logger::log(&format!("killing {id}"));
         TmuxCommand::kill_window(id)
     }
 
     pub fn rename(id: &IdW, new_name: &str) -> Result<()> {
-        Logger::log(&format!("renaming {id}"));
         TmuxCommand::rename_window(id, new_name)
     }
 
