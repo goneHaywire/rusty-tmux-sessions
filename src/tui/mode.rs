@@ -47,8 +47,7 @@ impl Into<Result<Mode>> for ToggleResult {
 impl ToggleResult {
     pub fn unwrap(self) -> Mode {
         match self {
-            Self::Toggled(mode) => mode,
-            Self::NotToggled(mode) => mode,
+            Self::Toggled(mode) | Self::NotToggled(mode) => mode,
         }
     }
 

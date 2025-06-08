@@ -6,14 +6,14 @@ use anyhow::{Context, Error, Result};
 use super::tmux_command::TmuxCommand;
 
 #[derive(Clone, Debug)]
-pub enum SessionEnv {
+pub enum SessionEnvVar {
     Hidden,
 }
 
-impl Display for SessionEnv {
+impl Display for SessionEnvVar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SessionEnv::Hidden => write!(f, "HIDDEN"),
+            SessionEnvVar::Hidden => write!(f, "HIDDEN"),
         }
     }
 }
@@ -44,7 +44,7 @@ impl FromStr for Session {
 
         scope(|s| {
             s.spawn(|| {
-                is_hidden = TmuxCommand::GetEnv(parts[1], SessionEnv::Hidden)
+                is_hidden = TmuxCommand::GetEnv(parts[1], SessionEnvVar::Hidden)
                     .run()
                     .and_then(|v| String::from_utf8(v).map_err(Into::into))
                     .map(|v| v == "1")
@@ -52,7 +52,7 @@ impl FromStr for Session {
             });
         });
 
-        let session = Session {
+        Ok(Session {
             id: parts[0].trim_start_matches('$').parse().unwrap(),
             name: parts[1].into(),
             is_attached: parts[2] == "1",
@@ -64,8 +64,7 @@ impl FromStr for Session {
                 .parse()
                 .context("error parsing session created_at")?,
             is_hidden,
-        };
-        Ok(session)
+        })
     }
 }
 
@@ -111,13 +110,13 @@ impl SessionService {
     }
 
     pub fn hide(name: &str) -> Result<()> {
-        TmuxCommand::SetEnv(name, SessionEnv::Hidden, Some("1"))
+        TmuxCommand::SetEnv(name, SessionEnvVar::Hidden, Some("1"))
             .run()
             .map(|_| ())
     }
 
     pub fn show(name: &str) -> Result<()> {
-        TmuxCommand::SetEnv(name, SessionEnv::Hidden, None)
+        TmuxCommand::SetEnv(name, SessionEnvVar::Hidden, None)
             .run()
             .map(|_| ())
     }

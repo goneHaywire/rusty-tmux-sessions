@@ -9,7 +9,7 @@ use anyhow::{anyhow, Result};
 
 use crate::tui::{logger::Logger, mode::CommandKind};
 
-use super::{sessions::SessionEnv, windows::IdW};
+use super::{sessions::SessionEnvVar, windows::IdW};
 const SESSION_FORMAT: &str =
     "#{#{session_id},#S,#{?session_attached,1,},#{session_activity},#{session_windows},#{session_created}}";
 
@@ -67,8 +67,8 @@ pub enum TmuxCommand<'a> {
     CreateSession(&'a str),
     CreateWindow(&'a str, &'a IdW, &'a WindowPos),
     SendKeys(&'a IdW, &'a [&'a str]),
-    SetEnv(&'a str, SessionEnv, Option<&'a str>),
-    GetEnv(&'a str, SessionEnv),
+    SetEnv(&'a str, SessionEnvVar, Option<&'a str>),
+    GetEnv(&'a str, SessionEnvVar),
 }
 
 impl From<TmuxCommand<'_>> for Command {
