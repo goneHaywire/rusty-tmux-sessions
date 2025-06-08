@@ -32,12 +32,7 @@ impl Display for WindowPos {
     }
 }
 
-fn base_cmd() -> Command {
-    let cmd = "tmux";
-    Command::new(cmd)
-}
-
-fn error_decorator(message: &str) -> String {
+fn error_decorator(_message: &str) -> String {
     todo!();
 }
 
@@ -57,166 +52,153 @@ impl IoToAnyhowResult for io::Result<Output> {
     }
 }
 
-pub struct TmuxCommand;
+#[derive(Clone, Debug)]
+pub enum TmuxCommand<'a> {
+    GetSessions,
+    GetWindows(&'a str),
+    GetSession(&'a str),
+    GetWindow(&'a IdW),
+    RenameSession(&'a str, &'a str),
+    RenameWindow(&'a IdW, &'a str),
+    AttachSession(&'a str),
+    AttachWindow(&'a IdW),
+    KillSession(&'a str),
+    KillWindow(&'a IdW),
+    CreateSession(&'a str),
+    CreateWindow(&'a str, &'a IdW, &'a WindowPos),
+    SendKeys(&'a IdW, &'a [&'a str]),
+    SetEnv(&'a str, SessionEnv, Option<&'a str>),
+    GetEnv(&'a str, SessionEnv),
+}
 
-impl TmuxCommand {
-    pub fn get_sessions() -> Result<Vec<u8>> {
-        base_cmd()
-            .args(["list-sessions", "-F", SESSION_FORMAT])
-            .output()
-            .as_result("list-sessions command failed")
-    }
+impl From<TmuxCommand<'_>> for Command {
+    fn from(value: TmuxCommand) -> Self {
+        use TmuxCommand::*;
 
-    pub fn get_windows(session_name: &str) -> Result<Vec<u8>> {
-        base_cmd()
-            .args(["list-windows", "-t", session_name, "-F", WINDOW_FORMAT])
-            .output()
-            .as_result(&format!("list-windows failed for session {session_name}",))
-    }
+        let mut cmd = TmuxCommand::base_cmd();
 
-    pub fn get_session(name: &str) -> Result<Vec<u8>> {
-        base_cmd()
-            .args([
+        match value {
+            GetSessions => cmd.args(["list-sessions", "-F", SESSION_FORMAT]),
+            GetWindows(session_name) => {
+                cmd.args(["list-windows", "-t", session_name, "-F", WINDOW_FORMAT])
+            }
+            GetSession(name) => cmd.args([
                 "list-sessions",
                 "-F",
                 SESSION_FORMAT,
                 "-f",
                 &format!("#{{m:{name},#S}}"),
-            ])
-            .output()
-            .as_result("get session command failed")
-    }
-
-    pub fn get_window(id: &IdW) -> Result<Vec<u8>> {
-        base_cmd()
-            .args([
+            ]),
+            GetWindow(id) => cmd.args([
                 "list-windows",
                 "-a",
                 "-F",
                 WINDOW_FORMAT,
                 "-f",
                 &format!("#{{==:{id},#{{window_id}}}}"),
-            ])
-            .output()
-            .as_result("get window command failed for window @{id}")
-    }
-
-    pub fn rename_session(old_name: &str, new_name: &str) -> Result<()> {
-        base_cmd()
-            .args(["rename-session", "-t", old_name, new_name])
-            .output()
-            .as_result(&format!("rename-session failed for session {old_name}",))
-            .map(|_| ())
-    }
-
-    pub fn rename_window(id: &IdW, new_name: &str) -> Result<()> {
-        base_cmd()
-            .args(["rename-window", "-t", &id.to_string(), new_name])
-            .output()
-            .as_result(&format!("rename-window failed for window @{id}",))
-            .map(|_| ())
-    }
-
-    pub fn attach_session(name: &str) -> Result<()> {
-        base_cmd()
-            .args(["switch-client", "-t", name])
-            .output()
-            .as_result(&format!("attach-session failed for session {name}"))
-            .map(|_| ())
-    }
-
-    pub fn attach_window(id: &IdW) -> Result<()> {
-        base_cmd()
-            .args(["switch-client", "-t", &id.to_string()])
-            .output()
-            .as_result(&format!("select-window failed for window @{id}",))
-            .map(|_| ())
-    }
-
-    pub fn kill_session(name: &str) -> Result<()> {
-        base_cmd()
-            .args(["kill-session", "-t", name])
-            .output()
-            .as_result(&format!("kill-session failed for session {name}",))
-            .map(|_| ())
-    }
-
-    pub fn kill_window(id: &IdW) -> Result<()> {
-        base_cmd()
-            .args(["kill-window", "-t", &id.to_string()])
-            .output()
-            .as_result(&format!("kill-window failed for window @{id}"))
-            .map(|_| ())
-    }
-
-    pub fn create_session(name: &str) -> Result<()> {
-        base_cmd()
-            .args(["new-session", "-d", "-s", name])
-            .output()
-            .as_result(&format!("new-session failed for session {name}"))
-            .map(|_| ())
-    }
-
-    pub fn create_window(name: &str, id: &IdW, pos: &WindowPos) -> Result<()> {
-        base_cmd()
-            .args([
+            ]),
+            RenameSession(old_name, new_name) => {
+                cmd.args(["rename-session", "-t", old_name, new_name])
+            }
+            RenameWindow(id, new_name) => {
+                cmd.args(["rename-window", "-t", &id.to_string(), new_name])
+            }
+            AttachSession(name) => cmd.args(["switch-client", "-t", name]),
+            AttachWindow(id) => cmd.args(["switch-client", "-t", &id.to_string()]),
+            KillSession(name) => cmd.args(["kill-session", "-t", name]),
+            KillWindow(id) => cmd.args(["kill-window", "-t", &id.to_string()]),
+            CreateSession(name) => cmd.args(["new-session", "-d", "-s", name]),
+            CreateWindow(name, id, window_pos) => cmd.args([
                 "new-window",
                 "-d",
-                &pos.to_string(),
+                &window_pos.to_string(),
                 "-t",
                 &id.to_string(),
                 "-n",
                 name,
-            ])
-            .output()
-            .as_result(&format!("new-window failed for window {name}"))
-            .map(|_| ())
-    }
+            ]),
+            SendKeys(window_id, keys) => cmd
+                .args(["send-keys", "-t", &window_id.to_string()])
+                .args(keys),
+            SetEnv(session_name, key, value) => {
+                cmd.args(["set-environment", "-t", session_name]);
 
-    pub fn send_keys(window_id: &IdW, keys: &[&str]) -> Result<()> {
-        let mut cmd = base_cmd();
-        let cmd = cmd
-            .args(["send-keys", "-t", &window_id.to_string()])
-            .args(keys);
-
-        cmd.output()
-            .as_result(&format!("send-keys failed for keys {:?}", keys))
-            .map(|_| ())
-    }
-
-    pub fn set_env(session_name: &str, key: SessionEnv, value: Option<&str>) -> Result<()> {
-        let mut cmd = base_cmd();
-        let cmd = cmd.args(["set-environment", "-t", session_name]);
-
-        let cmd = match value {
-            Some(value) => cmd.args([&key.to_string(), value]),
-            None => cmd.args(["-u", &key.to_string()]),
+                match value {
+                    Some(value) => cmd.args([&key.to_string(), value]),
+                    None => cmd.args(["-u", &key.to_string()]),
+                }
+            }
+            GetEnv(session_name, key) => {
+                cmd.args(["show-environment", "-t", session_name, &key.to_string()])
+            }
         };
+        cmd
+    }
+}
 
-        cmd.output()
-            .as_result(&format!(
-                "set-environment failed for session {session_name}"
-            ))
-            .map(|_| ())
+impl TmuxCommand<'_> {
+    fn base_cmd() -> Command {
+        let cmd = "tmux";
+        Command::new(cmd)
     }
 
-    pub fn get_env(session_name: &str, key: SessionEnv) -> Result<String> {
-        base_cmd()
-            .args(["show-environment", "-t", session_name, &key.to_string()])
-            .output()
-            .as_result(&format!(
-                "show-environment failed for session {session_name}"
-            ))
-            .and_then(|output| {
-                let value = output
-                    .as_slice()
-                    .split(|char| *char == b'=')
-                    .last()
-                    .unwrap_or_default();
+    pub fn run(self) -> Result<Vec<u8>> {
+        use TmuxCommand::*;
 
-                str::from_utf8(value)
-                    .map(|s| s.trim().to_string())
-                    .map_err(Into::into)
-            })
+        let mut cmd: Command = self.clone().into();
+
+        match self {
+            GetSessions => cmd.output().as_result("list-sessions command failed"),
+            GetWindows(session_name) => cmd
+                .output()
+                .as_result(&format!("list-windows failed for session {session_name}")),
+            GetSession(_) => cmd.output().as_result("get session command failed"),
+            GetWindow(_) => cmd
+                .output()
+                .as_result("get window command failed for window @{id}"),
+            RenameSession(old_name, _) => cmd
+                .output()
+                .as_result(&format!("rename-session failed for session {old_name}",)),
+            RenameWindow(id, _) => cmd
+                .output()
+                .as_result(&format!("rename-window failed for window @{id}",)),
+            AttachSession(name) => cmd
+                .output()
+                .as_result(&format!("attach-session failed for session {name}")),
+            AttachWindow(id) => cmd
+                .output()
+                .as_result(&format!("select-window failed for window @{id}",)),
+            KillSession(name) => cmd
+                .output()
+                .as_result(&format!("kill-session failed for session {name}",)),
+            KillWindow(id) => cmd
+                .output()
+                .as_result(&format!("kill-window failed for window @{id}")),
+            CreateSession(name) => cmd
+                .output()
+                .as_result(&format!("new-session failed for session {name}")),
+            CreateWindow(name, _, _) => cmd
+                .output()
+                .as_result(&format!("new-window failed for window {name}")),
+            SendKeys(_, keys) => cmd
+                .output()
+                .as_result(&format!("send-keys failed for keys {:?}", keys)),
+            SetEnv(session_name, _, _) => cmd.output().as_result(&format!(
+                "set-environment failed for session {session_name}"
+            )),
+            GetEnv(session_name, _) => cmd
+                .output()
+                .as_result(&format!(
+                    "show-environment failed for session {session_name}"
+                ))
+                .map(|output| {
+                    output
+                        .as_slice()
+                        .split(|char| *char == b'=')
+                        .next_back()
+                        .map(|v| v.trim_ascii().into())
+                        .unwrap_or_default()
+                }),
+        }
     }
 }

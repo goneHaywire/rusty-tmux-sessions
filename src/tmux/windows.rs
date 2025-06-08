@@ -85,7 +85,7 @@ pub struct WindowService;
 
 impl WindowService {
     pub fn get_all(session_name: &str) -> Result<Vec<Window>> {
-        let windows = TmuxCommand::get_windows(session_name)?;
+        let windows = TmuxCommand::GetWindows(session_name).run()?;
 
         str::from_utf8(&windows)
             .context("error parsing list-windows output")?
@@ -96,7 +96,7 @@ impl WindowService {
     }
 
     pub fn get_window(id: &IdW) -> Result<Window> {
-        let window = TmuxCommand::get_window(id)?;
+        let window = TmuxCommand::GetWindow(id).run()?;
 
         str::from_utf8(&window)
             .context("error parsing get-window output")
@@ -106,7 +106,7 @@ impl WindowService {
     }
 
     pub fn get_last_created_window_id(session_name: &str) -> Result<IdW> {
-        let windows = TmuxCommand::get_windows(session_name)?;
+        let windows = TmuxCommand::GetWindows(session_name).run()?;
 
         let ids: Result<Vec<IdW>> = str::from_utf8(&windows)?
             .lines()
@@ -120,19 +120,19 @@ impl WindowService {
     }
 
     pub fn create(name: &str, id: &IdW, pos: &WindowPos) -> Result<()> {
-        TmuxCommand::create_window(name, id, pos)
+        TmuxCommand::CreateWindow(name, id, pos).run().map(|_| ())
     }
 
     pub fn kill(id: &IdW) -> Result<()> {
-        TmuxCommand::kill_window(id)
+        TmuxCommand::KillWindow(id).run().map(|_| ())
     }
 
     pub fn rename(id: &IdW, new_name: &str) -> Result<()> {
-        TmuxCommand::rename_window(id, new_name)
+        TmuxCommand::RenameWindow(id, new_name).run().map(|_| ())
     }
 
     pub fn attach(id: &IdW) -> Result<()> {
-        TmuxCommand::attach_window(id)
+        TmuxCommand::AttachWindow(id).run().map(|_| ())
     }
 
     pub fn send_keys(id: &IdW, keys: &[u8], kind: CommandKind) -> Result<()> {
@@ -140,7 +140,7 @@ impl WindowService {
             CommandKind::Program => &[str::from_utf8(keys).unwrap(), "Enter"],
             CommandKind::Keys => &[str::from_utf8(keys).unwrap()],
         };
-        TmuxCommand::send_keys(id, keys)
+        TmuxCommand::SendKeys(id, keys).run().map(|_| ())
     }
 }
 

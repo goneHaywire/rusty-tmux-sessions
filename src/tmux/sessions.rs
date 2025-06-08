@@ -5,6 +5,7 @@ use anyhow::{Context, Error, Result};
 
 use super::{tmux::TmuxEntity, tmux_command::TmuxCommand};
 
+#[derive(Clone, Debug)]
 pub enum SessionEnv {
     Hidden,
 }
@@ -45,7 +46,9 @@ impl FromStr for Session {
 
         scope(|s| {
             s.spawn(|| {
-                is_hidden = TmuxCommand::get_env(parts[1], SessionEnv::Hidden)
+                is_hidden = TmuxCommand::GetEnv(parts[1], SessionEnv::Hidden)
+                    .run()
+                    .and_then(|v| String::from_utf8(v).map_err(Into::into))
                     .map(|v| v == "1")
                     .unwrap_or_default();
             });
@@ -72,7 +75,7 @@ pub struct SessionService;
 
 impl SessionService {
     pub fn get_all() -> Result<Vec<Session>> {
-        let sessions = TmuxCommand::get_sessions()?;
+        let sessions = TmuxCommand::GetSessions.run()?;
 
         str::from_utf8(&sessions)
             .context("error parsing list-sessions output")?
@@ -83,7 +86,7 @@ impl SessionService {
     }
 
     pub fn get_session(name: &str) -> Result<Session> {
-        let session = TmuxCommand::get_session(name)?;
+        let session = TmuxCommand::GetSession(name).run()?;
 
         str::from_utf8(&session)
             .context("error parsing get session output")
@@ -92,26 +95,32 @@ impl SessionService {
     }
 
     pub fn create(name: &str) -> Result<()> {
-        TmuxCommand::create_session(name)
+        TmuxCommand::CreateSession(name).run().map(|_| ())
     }
 
     pub fn kill(name: &str) -> Result<()> {
-        TmuxCommand::kill_session(name)
+        TmuxCommand::KillSession(name).run().map(|_| ())
     }
 
     pub fn rename(old_name: &str, new_name: &str) -> Result<()> {
-        TmuxCommand::rename_session(old_name, new_name)
+        TmuxCommand::RenameSession(old_name, new_name)
+            .run()
+            .map(|_| ())
     }
 
     pub fn attach(name: &str) -> Result<()> {
-        TmuxCommand::attach_session(name)
+        TmuxCommand::AttachSession(name).run().map(|_| ())
     }
 
     pub fn hide(name: &str) -> Result<()> {
-        TmuxCommand::set_env(name, SessionEnv::Hidden, Some("1"))
+        TmuxCommand::SetEnv(name, SessionEnv::Hidden, Some("1"))
+            .run()
+            .map(|_| ())
     }
 
     pub fn show(name: &str) -> Result<()> {
-        TmuxCommand::set_env(name, SessionEnv::Hidden, None)
+        TmuxCommand::SetEnv(name, SessionEnv::Hidden, None)
+            .run()
+            .map(|_| ())
     }
 }
