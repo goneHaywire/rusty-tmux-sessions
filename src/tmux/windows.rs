@@ -7,10 +7,7 @@ use anyhow::{Context, Error, Result};
 
 use crate::tui::{logger::Logger, mode::CommandKind};
 
-use super::{
-    tmux::TmuxEntity,
-    tmux_command::{TmuxCommand, WindowPos},
-};
+use super::tmux_command::{TmuxCommand, WindowPos};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, PartialOrd, Ord)]
 pub struct IdW(usize);
@@ -46,8 +43,6 @@ pub struct Window {
     pub panes_count: usize,
     pub current_command: Option<String>,
 }
-
-impl TmuxEntity for Window {}
 
 impl FromStr for Window {
     type Err = Error;

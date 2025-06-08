@@ -3,7 +3,7 @@ use std::{fmt::Display, str::FromStr, thread::scope};
 
 use anyhow::{Context, Error, Result};
 
-use super::{tmux::TmuxEntity, tmux_command::TmuxCommand};
+use super::tmux_command::TmuxCommand;
 
 #[derive(Clone, Debug)]
 pub enum SessionEnv {
@@ -28,8 +28,6 @@ pub struct Session {
     windows_count: usize,
     pub is_hidden: bool,
 }
-
-impl TmuxEntity for Session {}
 
 impl FromStr for Session {
     type Err = Error;
